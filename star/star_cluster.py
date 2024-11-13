@@ -105,9 +105,9 @@ class StarCluster(ClusterManager):
   def connect(self, client_id) -> StarClient:
     # TODO: Implement this method
     # pass
-    return StarClient([self.a, self.b, self.c, self.d])
+    return StarClient(infos=[self.a, self.b, self.c, self.d], client_id=client_id, next_chains=self.next_chain, prev_chains=self.prev_chain)
 
   def create_server(self, si: ServerInfo, connection_stub: ConnectionStub) -> Server:
     # TODO: Implement this method
     # pass
-    return StarServer(info=si, connection_stub=connection_stub, tail=self.d)
+    return StarServer(info=si, connection_stub=connection_stub, next=self.next[si], prev=self.prev[si], tail=self.d)

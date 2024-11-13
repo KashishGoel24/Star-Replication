@@ -50,8 +50,8 @@ class TestSTAR(unittest.TestCase):
         logger.info(f"Get key = {val}")
 
     try:
-      client1 = self.star.connect()
-      client2 = self.star.connect()
+      client1 = self.star.connect(1)
+      client2 = self.star.connect(2)
       print(printhi(3))
       client1.set("key", "0")
       print(printhi(4))
