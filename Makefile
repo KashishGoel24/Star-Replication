@@ -2,7 +2,7 @@
 
 # Set the starting port and bandwidth
 START_PORT ?= 9900
-BANDWIDTH ?= 100kbps
+BANDWIDTH ?= 30kbps
 NUM_PORTS ?= 4
 
 .PHONY: limit_ports clean
@@ -37,3 +37,6 @@ cr: setup
 
 craq: setup
 	python3 -m unittest craq.craq_test.TestCRAQ.test_gen_history
+
+star: setup
+	python3 -m unittest star.star_test.TestSTAR.test_gen_history

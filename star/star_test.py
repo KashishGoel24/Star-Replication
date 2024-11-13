@@ -7,6 +7,9 @@ from star.star_cluster import StarCluster, StarClient
 from core.logger import client_logger
 from core.logger import set_client_logfile, remove_client_logfile
 
+def printhi(x):
+  return "hi"+str(x)
+
 class TestSTAR(unittest.TestCase):
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
@@ -21,37 +24,44 @@ class TestSTAR(unittest.TestCase):
 
   def test_gen_history(self) -> None:
     # Redirect the logs to a file
+    # print(printhi(1))
     logfile_name = f"logs/{self._testMethodName}.log"
     if os.path.exists(logfile_name):
       os.remove(logfile_name)
     file_sink_id = set_client_logfile(logfile_name)
-
+    # print(printhi(2))
     def setter(c: StarClient, iters: int, name: str) -> None:
       logger = client_logger.bind(server_name=name)
       for i in range(iters):
+        print(printhi(6))
         logger.info(f"Setting key = {i}")
         c.set("key", f"{i}")
+        print(printhi(7))
         logger.info(f"Set key = {i}")
 
     def getter(c: StarClient, iters: int, name: str) -> None:
       logger = client_logger.bind(server_name=name)
       for _ in range(iters):
+        print(printhi(8))
         logger.info(f"Getting key")
         status, val = c.get("key")
         self.assertTrue(status, msg=val)
+        print(printhi(9))
         logger.info(f"Get key = {val}")
 
     try:
       client1 = self.star.connect()
       client2 = self.star.connect()
-
+      print(printhi(3))
       client1.set("key", "0")
+      print(printhi(4))
       s = threading.Thread(target=setter, args=(client1, 10, "worker_0"))
       g = threading.Thread(target=getter, args=(client2, 10, "worker_1"))
       s.start()
       g.start()
       s.join()
       g.join()
+      print(printhi(5))
     finally:
       remove_client_logfile(file_sink_id)
 
@@ -73,9 +83,10 @@ class TestSTAR(unittest.TestCase):
       start_time = time.time()
       sets = 0
       while True:
-        logger_instance.info(f"Setting key = {self.total_sets}")
-        c.set("key", f"{self.total_sets}")
-        logger_instance.info(f"Set key = {self.total_sets}")
+        with self.lock:
+          logger_instance.info(f"Setting key = {self.total_sets}")
+          c.set("key", f"{self.total_sets}")
+          logger_instance.info(f"Set key = {self.total_sets}")
         sets += 1
         # Check if the time window has elapsed
         if time.time() - start_time >= self.test_duration:
@@ -90,7 +101,7 @@ class TestSTAR(unittest.TestCase):
       gets = 0
       while True:
         logger_instance.info(f"Getting key")
-        status, val = c.get("key")
+        status, val = c.get("key", name)
         self.assertTrue(status, msg=val)
         logger_instance.info(f"Get key = {val}")
         gets += 1
@@ -103,15 +114,24 @@ class TestSTAR(unittest.TestCase):
     try:
       # Connect clients
       client1 = self.star.connect()
-      num_getters = 8
+      num_getters = 1
       clients = [self.star.connect() for _ in range(num_getters)]
+
+      num_setters = 1
+      clients_setter = [self.star.connect() for _ in range(num_setters)]
 
       # Set the initial value
       client1.set("key", "0")
 
+      # start num_setters threads for setters
+      setter_threads = [
+          threading.Thread(target=setter, args=(clients_setter[i], f"worker_{i+1}"))
+          for i in range(num_setters)
+      ]
+
       # Start num_getters threads for getter
       getter_threads = [
-          threading.Thread(target=getter, args=(clients[i], f"worker_{i+1}"))
+          threading.Thread(target=getter, args=(clients[i], f"worker_{i+1+num_getters}"))
           for i in range(num_getters)
       ]
 
@@ -119,6 +139,8 @@ class TestSTAR(unittest.TestCase):
       start_time = time.time()
 
       # Start the threads
+      for s_thread in setter_threads:
+        s_thread.start()
       for g_thread in getter_threads:
           g_thread.start()
 
@@ -127,6 +149,8 @@ class TestSTAR(unittest.TestCase):
           time.sleep(1)
 
       # Join the threads
+      # for s_thread in setter_threads:
+      #     s_thread.join()
       for g_thread in getter_threads:
           g_thread.join()
 
