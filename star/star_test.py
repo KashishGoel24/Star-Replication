@@ -3,7 +3,7 @@ import unittest
 import os
 import time
 
-from craq.craq_cluster import CraqCluster, CraqClient
+from star.star_cluster import CraqCluster, CraqClient
 from core.logger import client_logger
 from core.logger import set_client_logfile, remove_client_logfile
 

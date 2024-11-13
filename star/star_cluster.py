@@ -1,7 +1,7 @@
 import random
 from typing import Optional, Final
 
-from craq.craq_server import CraqServer
+from star.star_server import CraqServer
 from core.cluster import ClusterManager
 from core.message import JsonMessage, JsonMessage
 from core.network import TcpClient, ConnectionStub
