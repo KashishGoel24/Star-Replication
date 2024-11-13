@@ -3,20 +3,20 @@ import unittest
 import os
 import time
 
-from star.star_cluster import CraqCluster, CraqClient
+from star.star_cluster import StarCluster, StarClient
 from core.logger import client_logger
 from core.logger import set_client_logfile, remove_client_logfile
 
-class TestCRAQ(unittest.TestCase):
+class TestSTAR(unittest.TestCase):
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
-    self.craq = CraqCluster()
+    self.star = StarCluster()
 
   def setUp(self) -> None:
-    self.craq.start_all()
+    self.star.start_all()
 
   def tearDown(self) -> None:
-    self.craq.stop_all()
+    self.star.stop_all()
 
 
   def test_gen_history(self) -> None:
@@ -26,14 +26,14 @@ class TestCRAQ(unittest.TestCase):
       os.remove(logfile_name)
     file_sink_id = set_client_logfile(logfile_name)
 
-    def setter(c: CraqClient, iters: int, name: str) -> None:
+    def setter(c: StarClient, iters: int, name: str) -> None:
       logger = client_logger.bind(server_name=name)
       for i in range(iters):
         logger.info(f"Setting key = {i}")
         c.set("key", f"{i}")
         logger.info(f"Set key = {i}")
 
-    def getter(c: CraqClient, iters: int, name: str) -> None:
+    def getter(c: StarClient, iters: int, name: str) -> None:
       logger = client_logger.bind(server_name=name)
       for _ in range(iters):
         logger.info(f"Getting key")
@@ -42,8 +42,8 @@ class TestCRAQ(unittest.TestCase):
         logger.info(f"Get key = {val}")
 
     try:
-      client1 = self.craq.connect()
-      client2 = self.craq.connect()
+      client1 = self.star.connect()
+      client2 = self.star.connect()
 
       client1.set("key", "0")
       s = threading.Thread(target=setter, args=(client1, 10, "worker_0"))
@@ -68,7 +68,7 @@ class TestCRAQ(unittest.TestCase):
     self.total_gets = 0
     self.lock = threading.Lock()
 
-    def setter(c: CraqClient, name: str) -> None:
+    def setter(c: StarClient, name: str) -> None:
       logger_instance = client_logger.bind(server_name=name)
       start_time = time.time()
       sets = 0
@@ -84,7 +84,7 @@ class TestCRAQ(unittest.TestCase):
       with self.lock:
         self.total_sets += sets
 
-    def getter(c: CraqClient, name: str) -> None:
+    def getter(c: StarClient, name: str) -> None:
       logger_instance = client_logger.bind(server_name=name)
       start_time = time.time()
       gets = 0
@@ -102,9 +102,9 @@ class TestCRAQ(unittest.TestCase):
 
     try:
       # Connect clients
-      client1 = self.craq.connect()
+      client1 = self.star.connect()
       num_getters = 8
-      clients = [self.craq.connect() for _ in range(num_getters)]
+      clients = [self.star.connect() for _ in range(num_getters)]
 
       # Set the initial value
       client1.set("key", "0")

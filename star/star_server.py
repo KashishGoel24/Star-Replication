@@ -1,5 +1,4 @@
 
-# TODO: Implement the Server for CRAQ
 
 import json
 from enum import Enum
@@ -93,7 +92,7 @@ class KVAckRequest:
     return str(self._json_message)
 
 
-class CraqServer(Server):
+class StarServer(Server):
   """Chain replication. GET is only served by tail"""
 
   def __init__(self, info: ServerInfo, connection_stub: ConnectionStub,
