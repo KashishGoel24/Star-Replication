@@ -50,8 +50,16 @@ class KVSetRequest:
     return self._json_message.get("ver")
   
   @property
-  def request_id(self) -> int:
+  def request_id(self) -> str:
     return self._json_message["request_id"]
+  
+  @property
+  def next_chain(self) -> dict[ServerInfo, Optional[ServerInfo]]:
+    return self._json_message["next_chain"]
+  
+  @property
+  def prev_chain(self) -> dict[ServerInfo, Optional[ServerInfo]]:
+    return self._json_message["prev_chain"]
 
   @version.setter
   def version(self, ver: int) -> None:
@@ -83,6 +91,18 @@ class KVAckRequest:
   @property
   def version(self) -> Optional[int]:
     return self._json_message.get("ver")
+  
+  @property
+  def request_id(self) -> Optional[int]:
+    return self._json_message.get("request_id")
+  
+  @property
+  def tail_verif(self) -> Optional[int]:
+    return self._json_message.get("tail_verif")
+  
+  @property
+  def prev_chain(self) -> dict[ServerInfo, Optional[ServerInfo]]:
+    return self._json_message["prev_chain"]
 
   @property
   def json_msg(self) -> JsonMessage:
@@ -103,7 +123,7 @@ class StarServer(Server):
     self.prev: Final[Optional[str]] = prev if prev is None else prev.name
     self.tail: Final[str] = tail.name
     self.d: dict[str, str] = {} # Key-Value store
-    self.versions: dict[str, Tuple[int, Optional[int]]] = {} # this will maintain the dictionary from the keys to the version numbers 
+    self.versions: dict[str, Tuple[str, Optional[int]]] = {} # this will maintain the dictionary from the keys to the version numbers 
     self.versionState: dict[str,str] = {} # this will maintain the dictionary from the keys to the latest version state whether clean or dirty
 
   def _process_req(self, msg: JsonMessage) -> JsonMessage:
@@ -150,33 +170,50 @@ class StarServer(Server):
     _logger = server_logger.bind(server_name=self._info.name)
     _logger.debug(f"Setting {req.key} to {req.val}")
 
-    if (req.key in self.versions):
-      self.versions[req.key] += 1
+    if req.version is None and self.__info.name == self.tail:
+        version_num = self.versions[req.key] + 1
     else:
-      self.versions[req.key] = 1
-    if (self.next is None):
-      self.versionState[req.key] = 'C'
-    else:
-      self.versionState[req.key] = 'D'
+      version_num = req.version
 
     self.d[req.key] = req.val
-    if self.next is not None:
-      # Send blocking request
-      return self._connection_stub.send(from_=self._info.name, to=self.next,message=req.json_msg)
+    self.versionState[req.key] = 'D'
+    self.versions[req.key] = (req.request_id, version_num)
+    req.version = version_num         # hoping that the request now has the version number defined
+
+    ##### check if we should send blocking or non blocking requests here
+    next_server = req.next_chain[self.__info.name]
+    if next_server is not None:
+      return self._connection_stub.send(from_=self._info.name, to=next_server,message=req.json_msg)
     else:
-      # here if you are the tail then send ack message about the successsful write
-      AckMessage = JsonMessage({"type": "ACK", "key": req.key, "ver": self.versions[req.key], "val": req.val})
-      self._connection_stub.send(from_=self._info.name, to=self.prev, message=AckMessage, blocking=False)
+      if self.__info.name == self.tail:
+        tail_verif = True
+        self.versionState[req.key] = 'C'
+      else:
+        tail_verif= False
+      AckMessage = JsonMessage({"type": "ACK", "key": req.key, "ver": version_num, "request_id" : req.request_id, "tail_verif": tail_verif, "prev_chain": req.prev_chain})
+      self._connection_stub.send(from_=self._info.name, to=req.prev_chain[self.__info.name], message=AckMessage, blocking=False)
       return JsonMessage({"status": "OK"})
       
   def _ack(self, req: KVSetRequest) -> JsonMessage:
     _logger = server_logger.bind(server_name=self._info.name)
     _logger.debug(f"Setting the version of {req.key} to {req.version}")
-    
-    if ((self.versions[req.key] == req.version) and (self.d[req.key] == req.val)):
-      self.versionState[req.key] = 'C'
 
-    if self.prev is not None:
-      return self._connection_stub.send(from_=self._info.name, to=self.prev, message=req.json_msg)
+    key = req.key
+    request_id = req.request_id
+    version = req.version
+    tail_verif = req.tail_verif
+
+    if self.versions[req.key][0] == request_id:
+      if tail_verif:
+        self.versions[req.key] = (request_id, version)
+        self.versionState[req.key] = 'C'
+
+      if not tail_verif and self.__info.name == self.tail:
+        req.tail_verif = True
+        self.versionState[req.key] = 'C'
+
+    prev_server = req.prev_chain[self.__info.name]
+    if prev_server is not None:
+      return self._connection_stub.send(from_=self._info.name, to=prev_server, message=req.json_msg)
     else:
       return JsonMessage({"status": "OK"})

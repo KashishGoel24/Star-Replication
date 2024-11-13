@@ -25,11 +25,14 @@ class StarClient():
     self.id=client_id
     self.next_chains=next_chains
     self.prev_chains=prev_chains
+    self.request_no=1
 
   # this too should be the same as that of crClient because the set requet is still processed only by the head server
   def set(self, key: str, val: str) -> bool:
     server_number=self._get_server()
-    response: Optional[JsonMessage] = self.conns[server_number].send(JsonMessage({"type": "SET", "key": key, "val": val, "c_id": self.id, "next_chain": self.next_chains[server_number], "prev_chain": self.prev_chains[server_number]}))
+    request_id = "client_no" + str(self.id) + "req" + str(self.request_no)
+    self.request_no += 1
+    response: Optional[JsonMessage] = self.conns[server_number].send(JsonMessage({"type": "SET", "key": key, "val": val, "c_id": self.id, "next_chain": self.next_chains[server_number], "prev_chain": self.prev_chains[server_number], "request_id": request_id}))
     assert response is not None
     return response["status"] == "OK"
 
