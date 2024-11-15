@@ -3,7 +3,7 @@ from typing import Optional, Final
 
 from star.star_server import StarServer
 from core.cluster import ClusterManager
-from core.message import JsonMessage
+from core.message import JsonMessage, JsonMessage
 from core.network import TcpClient, ConnectionStub
 from core.server import ServerInfo, Server
 
@@ -30,9 +30,7 @@ class StarClient():
   # this too should be the same as that of crClient because the set requet is still processed only by the head server
   def set(self, key: str, val: str) -> bool:
     server_number=self._get_server()
-    request_id = "client_no" + str(self.id) + "req" + str(self.request_no)
-    self.request_no += 1
-    response: Optional[JsonMessage] = self.conns[server_number].send(JsonMessage({"type": "SET", "key": key, "val": val, "c_id": self.id, "next_chain": self.next_chains[server_number], "prev_chain": self.prev_chains[server_number], "request_id": request_id}))
+    response: Optional[JsonMessage] = self.conns[server_number].send(JsonMessage({"type": "SET", "key": key, "val": val, "c_id": self.id, "next_chain": self.next_chains[server_number], "prev_chain": self.prev_chains[server_number], "version_number": None}))
     assert response is not None
     return response["status"] == "OK"
 
