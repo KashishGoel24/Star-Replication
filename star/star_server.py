@@ -53,17 +53,25 @@ class KVSetRequest:
   def request_id(self) -> str:
     return self._json_message["request_id"]
   
+  # @property
+  # def next_chain(self) -> dict[ServerInfo, Optional[ServerInfo]]:
+  #   return self._json_message["next_chain"]
+
   @property
-  def next_chain(self) -> dict[ServerInfo, Optional[ServerInfo]]:
-    return self._json_message["next_chain"]
-  
+  def next_chain(self) -> dict[str, Optional[ServerInfo]]:
+    return {str(k): v for k, v in self._json_message["next_chain"].items()}
+
   @property
-  def prev_chain(self) -> dict[ServerInfo, Optional[ServerInfo]]:
-    return self._json_message["prev_chain"]
+  def prev_chain(self) -> dict[str, Optional[ServerInfo]]:
+    return {str(k): v for k, v in self._json_message["prev_chain"].items()}
+
+  # @property
+  # def prev_chain(self) -> dict[ServerInfo, Optional[ServerInfo]]:
+  #   return self._json_message["prev_chain"]
 
   @version.setter
   def version(self, ver: int) -> None:
-    self._json_message['ver'] = ver
+    self._json_message["ver"] = ver
 
   @property
   def json_msg(self) -> JsonMessage:
@@ -100,9 +108,13 @@ class KVAckRequest:
   def tail_verif(self) -> Optional[int]:
     return self._json_message.get("tail_verif")
   
+  # @property
+  # def prev_chain(self) -> dict[ServerInfo, Optional[ServerInfo]]:
+  #   return self._json_message["prev_chain"]
+
   @property
-  def prev_chain(self) -> dict[ServerInfo, Optional[ServerInfo]]:
-    return self._json_message["prev_chain"]
+  def prev_chain(self) -> dict[str, Optional[ServerInfo]]:
+    return {str(k): v for k, v in self._json_message["prev_chain"].items()}
 
   @property
   def json_msg(self) -> JsonMessage:
@@ -120,7 +132,7 @@ class StarServer(Server):
                tail: ServerInfo) -> None:
     super().__init__(info, connection_stub)
     self.next: Final[Optional[str]] = None if next is None else next.name
-    self.prev: Final[Optional[str]] = prev if prev is None else prev.name
+    self.prev: Final[Optional[str]] = None if prev is None else prev.name
     self.tail: Final[str] = tail.name
     self.d: dict[str, str] = {} # Key-Value store
     self.versions: dict[str, Tuple[str, Optional[int]]] = {} # this will maintain the dictionary from the keys to the version numbers 

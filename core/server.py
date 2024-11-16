@@ -19,16 +19,8 @@ from core.socket_helpers import STATUS_CODE, recv_message
 MAX_WORKERS = 32
 
 @dataclass
-class ServerInfo:
-  name: str
-  host: str
-  port: int
-
-  def __hash__(self) -> int:
-    return hash(f"{self.name} {self.host}:{self.port}")
-
-  def __str__(self) -> str:
-    return f"Name={self.name},Address={self.host}:{self.port},"
+ẓ
+    # return f"{self.name}:{self.host}:{self.port}"
 
 
 class Server(Process):
