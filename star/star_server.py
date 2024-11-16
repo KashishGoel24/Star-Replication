@@ -2,6 +2,8 @@
 
 import json
 from enum import Enum
+import queue
+import socket
 from typing import Optional, Final, Tuple, List
 
 from core.logger import server_logger
@@ -73,7 +75,6 @@ class KVSetRequest:
   def __str__(self) -> str:
     return str(self._json_message)
 
-# type, key, ver, val
 class KVAckRequest:
   def __init__(self, msg: JsonMessage):
     self._json_message = msg
@@ -130,22 +131,33 @@ class StarServer(Server):
     self.d: dict[str, str] = {} # Key-Value store
     # self.versions: dict[str, Tuple[str, Optional[int]]] = {} # this will maintain the dictionary from the keys to the version numbers 
     self.versions: defaultdict[str, Tuple[str, Optional[int]]] = defaultdict(lambda: ('0', 0))
-    self.versionState: defaultdict[str, str] = defaultdict(lambda: ('0'))# this will maintain the dictionary from the keys to the latest version state whether clean or dirty
+    self.versionState: defaultdict[str, str] = defaultdict(lambda: ('C'))# this will maintain the dictionary from the keys to the latest version state whether clean or dirty
 
-  def _process_req(self, msg: JsonMessage) -> JsonMessage:
-    if msg.get("type") == RequestType.GET.name:
-      return self._get(KVGetRequest(msg))
-    elif msg.get("type") == RequestType.SET.name:
-      return self._set(KVSetRequest(msg))
-    # make a request here to process the confirmation acknowledgment from the tail
-    # and make the version clean
-    elif msg.get("type") == RequestType.ACK.name:
-      # here you have received a ack from the tail for the version that has become clean
-      # so make the apt changes in your dictionary
-      return self._ack(KVAckRequest(msg))
-    else:
-      server_logger.critical("Invalid message type")
-      return JsonMessage({"status": "Unexpected type"})
+  def _process_req(self, req_q: queue.Queue[Tuple[JsonMessage, socket.socket]]) -> JsonMessage:
+    while True:
+      req = req_q.get()
+      msg: JsonMessage = req[0]
+      client_sock = req[1]
+      try:
+        # cmd.handle(self.state)
+        if msg.get("type") == RequestType.GET.name:
+          response = self._get(KVGetRequest(msg))
+        elif msg.get("type") == RequestType.SET.name:
+          response = self._set(KVSetRequest(msg))
+        elif msg.get("type") == RequestType.ACK.name:
+          response = self._ack(KVAckRequest(msg))
+        else:
+          server_logger.critical("Invalid message type")
+          response = JsonMessage({"status": "Unexpected type"})
+        
+        if response is not None:
+          # _logger.debug(f"Sending message to {addr}: {response}")
+          server_logger.debug(f"Sending message from the {response}")
+          client_sock.sendall(response.serialize())
+
+      except Exception as e:
+        server_logger.exception(e)
+        server_logger.critical("The server got exception")
 
   def _get(self, req: KVGetRequest) -> JsonMessage:
     _logger = server_logger.bind(server_name=self._info.name)
@@ -154,7 +166,7 @@ class StarServer(Server):
       return JsonMessage({"status": "OK", "val": 0})
 
     # last_version = self.versions[req.key]
-    if (self.versionState[req.key]=='C' or self._info.name==self.tail):
+    if (self._info.name==self.tail or self.versionState[req.key]=='C'):
       val = self.d[req.key]
       version_no = self.versions[req.key][1]
     else:
@@ -176,21 +188,25 @@ class StarServer(Server):
     _logger = server_logger.bind(server_name=self._info.name)
     _logger.debug(f"Setting {req.key} to {req.val}")
 
-    if req.version is None and self._info.name == self.tail:
-      version_num = self.versions[req.key][1] + 1
+    if req.key in self.d:
+      if req.version is None and self._info.name == self.tail:
+        version_num = self.versions[req.key][1] + 1
+      else:
+        version_num = req.version
+
+      prev_version_num=self.versions[req.key][1]
+
     else:
       version_num = req.version
-
-    prev_version_num=self.versions[req.key][1]
+      prev_version_num = 0
 
     if self._info.name != self.tail and (prev_version_num is None or version_num is None or prev_version_num<version_num): # we dont apply to write to the tail till everyone has seen it
       # if we have prev vn none then we apply every write, if we have new vn none then too we apply every write, in case prev vn and vn have a numberical value, we dont apply the new write
       self.d[req.key] = req.val 
       self.versionState[req.key] = 'D'
       self.versions[req.key] = (req.request_id, version_num) # we need to ensure max
-    req.version = version_num         # hoping that the request now has the version number defined
+    req.version = version_num
 
-    ##### check if we should send blocking or non blocking requests here
     next_server = req.next_chain[self._info.name]
 
     if next_server is not None:
@@ -198,11 +214,15 @@ class StarServer(Server):
       temp= self._connection_stub.send(from_=self._info.name, to=next_server,message=req.json_msg) # this will be status: ok
 
       if self._info.name==self.tail: # we can apply the write here
-
-        # tail_verif = True # we dont need it here? 
-        # self.versionState[req.key] = 'C' # we will never have a dirty entry here
-        self.d[req.key] = req.val # no need to store the new value in a temp buffer
-        self.versions[req.key] = (req.request_id, version_num)
+        # it may happen that by the time we come here another latest write has been done 
+        # hence we should check that the version number is greater or equal
+        if req.key not in self.versions or self.versions[req.key][1] <= version_num:
+          # i think we can make it clean here
+          # the purpose of not doing it initially was that all the servers may not have seen the dirty pending write but now they have
+          # it is necessary to define it here as we need some initial value in the version state dict for the key 
+          # self.versionState[req.key] = 'C' # we will never have a dirty entry here
+          self.d[req.key] = req.val # no need to store the new value in a temp buffer
+          self.versions[req.key] = (req.request_id, version_num)
 
       return temp
 

@@ -1,6 +1,9 @@
 Server design 
 
-1. To keep track of mapping from key to value we still maintain a dictionary
-2. Each key is mapped to a tuple of int and (int or None) which is the request id and the version number respectively
+1. To keep track of mapping from key to value we still maintain a dictionary from str to str
+2. Each key is mapped to a tuple of request id and the verison number and hence (str, Optional[int])
 3. version state remains the same mapping a key to either dirty or clean state
 4. right now there is self.next and self.prev but later we will change this
+5. we will define a queue for every server where we put the set requests we get and process them one by one
+    a. we will have to put each and every request in the queue and cant serve the read requests immediately as it may hurt linearizability
+    b. so when we get any request we will put the request into the queue and there will be a single thread serving the requests which will fetch the requests and serve them
