@@ -130,7 +130,7 @@ class StarServer(Server):
     self.d: dict[str, str] = {} # Key-Value store
     # self.versions: dict[str, Tuple[str, Optional[int]]] = {} # this will maintain the dictionary from the keys to the version numbers 
     self.versions: defaultdict[str, Tuple[str, Optional[int]]] = defaultdict(lambda: ('0', 0))
-    self.versionState: dict[str,str] = {} # this will maintain the dictionary from the keys to the latest version state whether clean or dirty
+    self.versionState: defaultdict[str, str] = defaultdict(lambda: ('0'))# this will maintain the dictionary from the keys to the latest version state whether clean or dirty
 
   def _process_req(self, msg: JsonMessage) -> JsonMessage:
     if msg.get("type") == RequestType.GET.name:
@@ -154,9 +154,9 @@ class StarServer(Server):
       return JsonMessage({"status": "OK", "val": 0})
 
     # last_version = self.versions[req.key]
-    if (self.versionState[req.key]=='C'):
+    if (self.versionState[req.key]=='C' or self._info.name==self.tail):
       val = self.d[req.key]
-      version_no = self.versions[req.key]
+      version_no = self.versions[req.key][1]
     else:
       # get the value from the tail and define it as val
       valMessage = JsonMessage({"type": "GET", "key": req.key})
@@ -181,32 +181,47 @@ class StarServer(Server):
     else:
       version_num = req.version
 
-    if self._info.name != self.tail: # we dont 
-      self.d[req.key] = req.val
+    prev_version_num=self.versions[req.key][1]
+
+    if self._info.name != self.tail and (prev_version_num is None or version_num is None or prev_version_num<version_num): # we dont apply to write to the tail till everyone has seen it
+      # if we have prev vn none then we apply every write, if we have new vn none then too we apply every write, in case prev vn and vn have a numberical value, we dont apply the new write
+      self.d[req.key] = req.val 
       self.versionState[req.key] = 'D'
-      self.versions[req.key] = (req.request_id, version_num)
+      self.versions[req.key] = (req.request_id, version_num) # we need to ensure max
     req.version = version_num         # hoping that the request now has the version number defined
 
     ##### check if we should send blocking or non blocking requests here
     next_server = req.next_chain[self._info.name]
+
     if next_server is not None:
-      temp= self._connection_stub.send(from_=self._info.name, to=next_server,message=req.json_msg)
-      if self._info.name==self.tail:
-        tail_verif = True
-        self.versionState[req.key] = 'C'
-        self.d[req.key] = req.val
+
+      temp= self._connection_stub.send(from_=self._info.name, to=next_server,message=req.json_msg) # this will be status: ok
+
+      if self._info.name==self.tail: # we can apply the write here
+
+        # tail_verif = True # we dont need it here? 
+        # self.versionState[req.key] = 'C' # we will never have a dirty entry here
+        self.d[req.key] = req.val # no need to store the new value in a temp buffer
         self.versions[req.key] = (req.request_id, version_num)
+
       return temp
+
     else:
+
       if self._info.name == self.tail:
         tail_verif = True
-        self.versionState[req.key] = 'C'
+        # self.versionState[req.key] = 'C'
         self.d[req.key] = req.val
         self.versions[req.key] = (req.request_id, version_num)
+
       else:
+
         tail_verif= False
+
       AckMessage = JsonMessage({"type": "ACK", "key": req.key, "ver": version_num, "request_id" : req.request_id, "tail_verif": tail_verif, "prev_chain": req.prev_chain})
-      self._connection_stub.send(from_=self._info.name, to=req.prev_chain[self._info.name], message=AckMessage, blocking=False)
+
+      self._connection_stub.send(from_=self._info.name, to=req.prev_chain[self._info.name], message=AckMessage, blocking=False) # non blocking ack
+
       return JsonMessage({"status": "OK"})
       
   def _ack(self, req: KVSetRequest) -> JsonMessage:
@@ -218,9 +233,11 @@ class StarServer(Server):
     version = req.version
     tail_verif = req.tail_verif
 
+    prev_version_num=self.versions[req.key][1]
+
     if self.versions[req.key][0] == request_id:
-      if tail_verif:
-        self.versions[req.key] = (request_id, version)
+      if tail_verif and (prev_version_num is None or prev_version_num<version): # checking this ensures that we dont clean the version for the servers that come after the tail and get the acks before the tail
+        self.versions[req.key] = (request_id, version) # the second check ensures we dont overwrite the latest version just because an ack came late
         self.versionState[req.key] = 'C'
 
       if not tail_verif and self._info.name == self.tail:
@@ -228,7 +245,8 @@ class StarServer(Server):
         self.versionState[req.key] = 'C'
 
     prev_server = req.prev_chain[self._info.name]
+
     if prev_server is not None:
       return self._connection_stub.send(from_=self._info.name, to=prev_server, message=req.json_msg)
-    else:
+    else: # we have reached the start of the chain
       return JsonMessage({"status": "OK"})
