@@ -8,7 +8,7 @@ from core.logger import server_logger
 from core.message import JsonMessage, JsonMessage
 from core.network import ConnectionStub
 from core.server import Server, ServerInfo
-
+from collections import defaultdict
 
 class RequestType(Enum):
   SET = 1
@@ -53,25 +53,18 @@ class KVSetRequest:
   def request_id(self) -> str:
     return self._json_message["request_id"]
   
-  # @property
-  # def next_chain(self) -> dict[ServerInfo, Optional[ServerInfo]]:
-  #   return self._json_message["next_chain"]
-
   @property
-  def next_chain(self) -> dict[str, Optional[ServerInfo]]:
-    return {str(k): v for k, v in self._json_message["next_chain"].items()}
-
+  def next_chain(self) -> dict[ServerInfo, Optional[ServerInfo]]:
+    return self._json_message["next_chain"]
+  
   @property
-  def prev_chain(self) -> dict[str, Optional[ServerInfo]]:
-    return {str(k): v for k, v in self._json_message["prev_chain"].items()}
-
-  # @property
-  # def prev_chain(self) -> dict[ServerInfo, Optional[ServerInfo]]:
-  #   return self._json_message["prev_chain"]
+  def prev_chain(self) -> dict[ServerInfo, Optional[ServerInfo]]:
+    return self._json_message["prev_chain"]
 
   @version.setter
   def version(self, ver: int) -> None:
-    self._json_message["ver"] = ver
+    self._json_message['ver'] = ver
+  
 
   @property
   def json_msg(self) -> JsonMessage:
@@ -85,7 +78,7 @@ class KVAckRequest:
   def __init__(self, msg: JsonMessage):
     self._json_message = msg
     assert "key" in self._json_message, self._json_message
-    assert "val" in self._json_message, self._json_message
+    # assert "val" in self._json_message, self._json_message
     assert "ver" in self._json_message, self._json_message
 
   @property
@@ -108,13 +101,9 @@ class KVAckRequest:
   def tail_verif(self) -> Optional[int]:
     return self._json_message.get("tail_verif")
   
-  # @property
-  # def prev_chain(self) -> dict[ServerInfo, Optional[ServerInfo]]:
-  #   return self._json_message["prev_chain"]
-
   @property
-  def prev_chain(self) -> dict[str, Optional[ServerInfo]]:
-    return {str(k): v for k, v in self._json_message["prev_chain"].items()}
+  def prev_chain(self) -> dict[ServerInfo, Optional[ServerInfo]]:
+    return self._json_message["prev_chain"]
 
   @property
   def json_msg(self) -> JsonMessage:
@@ -122,6 +111,10 @@ class KVAckRequest:
 
   def __str__(self) -> str:
     return str(self._json_message)
+
+  @version.setter
+  def tail_verif(self, ans: bool) -> None:
+    self._json_message['tail_verif'] = ans
 
 
 class StarServer(Server):
@@ -132,10 +125,11 @@ class StarServer(Server):
                tail: ServerInfo) -> None:
     super().__init__(info, connection_stub)
     self.next: Final[Optional[str]] = None if next is None else next.name
-    self.prev: Final[Optional[str]] = None if prev is None else prev.name
+    self.prev: Final[Optional[str]] = prev if prev is None else prev.name
     self.tail: Final[str] = tail.name
     self.d: dict[str, str] = {} # Key-Value store
-    self.versions: dict[str, Tuple[str, Optional[int]]] = {} # this will maintain the dictionary from the keys to the version numbers 
+    # self.versions: dict[str, Tuple[str, Optional[int]]] = {} # this will maintain the dictionary from the keys to the version numbers 
+    self.versions: defaultdict[str, Tuple[str, Optional[int]]] = defaultdict(lambda: ('0', 0))
     self.versionState: dict[str,str] = {} # this will maintain the dictionary from the keys to the latest version state whether clean or dirty
 
   def _process_req(self, msg: JsonMessage) -> JsonMessage:
@@ -182,28 +176,37 @@ class StarServer(Server):
     _logger = server_logger.bind(server_name=self._info.name)
     _logger.debug(f"Setting {req.key} to {req.val}")
 
-    if req.version is None and self.__info.name == self.tail:
-        version_num = self.versions[req.key] + 1
+    if req.version is None and self._info.name == self.tail:
+      version_num = self.versions[req.key][1] + 1
     else:
       version_num = req.version
 
-    self.d[req.key] = req.val
-    self.versionState[req.key] = 'D'
-    self.versions[req.key] = (req.request_id, version_num)
+    if self._info.name != self.tail: # we dont 
+      self.d[req.key] = req.val
+      self.versionState[req.key] = 'D'
+      self.versions[req.key] = (req.request_id, version_num)
     req.version = version_num         # hoping that the request now has the version number defined
 
     ##### check if we should send blocking or non blocking requests here
-    next_server = req.next_chain[self.__info.name]
+    next_server = req.next_chain[self._info.name]
     if next_server is not None:
-      return self._connection_stub.send(from_=self._info.name, to=next_server,message=req.json_msg)
-    else:
-      if self.__info.name == self.tail:
+      temp= self._connection_stub.send(from_=self._info.name, to=next_server,message=req.json_msg)
+      if self._info.name==self.tail:
         tail_verif = True
         self.versionState[req.key] = 'C'
+        self.d[req.key] = req.val
+        self.versions[req.key] = (req.request_id, version_num)
+      return temp
+    else:
+      if self._info.name == self.tail:
+        tail_verif = True
+        self.versionState[req.key] = 'C'
+        self.d[req.key] = req.val
+        self.versions[req.key] = (req.request_id, version_num)
       else:
         tail_verif= False
       AckMessage = JsonMessage({"type": "ACK", "key": req.key, "ver": version_num, "request_id" : req.request_id, "tail_verif": tail_verif, "prev_chain": req.prev_chain})
-      self._connection_stub.send(from_=self._info.name, to=req.prev_chain[self.__info.name], message=AckMessage, blocking=False)
+      self._connection_stub.send(from_=self._info.name, to=req.prev_chain[self._info.name], message=AckMessage, blocking=False)
       return JsonMessage({"status": "OK"})
       
   def _ack(self, req: KVSetRequest) -> JsonMessage:
@@ -220,11 +223,11 @@ class StarServer(Server):
         self.versions[req.key] = (request_id, version)
         self.versionState[req.key] = 'C'
 
-      if not tail_verif and self.__info.name == self.tail:
+      if not tail_verif and self._info.name == self.tail:
         req.tail_verif = True
         self.versionState[req.key] = 'C'
 
-    prev_server = req.prev_chain[self.__info.name]
+    prev_server = req.prev_chain[self._info.name]
     if prev_server is not None:
       return self._connection_stub.send(from_=self._info.name, to=prev_server, message=req.json_msg)
     else:

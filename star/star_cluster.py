@@ -3,7 +3,7 @@ from typing import Optional, Final
 
 from star.star_server import StarServer
 from core.cluster import ClusterManager
-from core.message import JsonMessage
+from core.message import JsonMessage, JsonMessage
 from core.network import TcpClient, ConnectionStub
 from core.server import ServerInfo, Server
 
@@ -16,7 +16,7 @@ class StarClient():
   # pass
 
   # this should be the same as that for crClient
-  def __init__(self, infos: list[ServerInfo], client_id: int, next_chains: list[dict[ServerInfo, Optional[ServerInfo]]], prev_chains:list[dict[ServerInfo, Optional[ServerInfo]]] ):
+  def __init__(self, infos: list[ServerInfo], client_id: int, next_chains: list[dict[str, Optional[str]]], prev_chains:list[dict[str, Optional[str]]] ):
     self.conns: list[TcpClient] = []
     for info in infos:
       conn = TcpClient(info)
@@ -26,6 +26,9 @@ class StarClient():
     self.next_chains=next_chains
     self.prev_chains=prev_chains
     self.request_no=1
+  
+  
+
 
   # this too should be the same as that of crClient because the set requet is still processed only by the head server
   def set(self, key: str, val: str) -> bool:
@@ -38,7 +41,7 @@ class StarClient():
 
   # need to implement this
   def get(self, key: str) -> tuple[bool, Optional[str]]:
-    server = self.conns[self._get_server()]
+    server=self.conns[self._get_server()]
     response: Optional[JsonMessage] = server.send(JsonMessage({"type": "GET", "key": key}))
     assert response is not None
     if response["status"] == "OK":
@@ -94,18 +97,21 @@ class StarCluster(ClusterManager):
     super().__init__(
       master_name="d",
       topology={
-        self.a: {self.b, self.d},
+        self.a: {self.b, self.d, self.c},
         self.b: {self.a, self.c, self.d},
-        self.c: {self.b, self.d},
-        self.d: {self.c},
+        self.c: {self.b, self.d, self.a},
+        self.d: {self.c, self.a, self.b},
       },
       sock_pool_size=POOL_SZ,
     )
-
+  def conv_chain(self, chain_list:list[dict[ServerInfo, Optional[ServerInfo]]])->list[dict[str, Optional[str]]]:
+    return [
+    {key.name: (value.name if value is not None else None) for key, value in chain.items()}
+    for chain in chain_list]
   def connect(self, client_id) -> StarClient:
     # TODO: Implement this method
     # pass
-    return StarClient(infos=[self.a, self.b, self.c, self.d], client_id=client_id, next_chains=self.next_chain, prev_chains=self.prev_chain)
+    return StarClient(infos=[self.a, self.b, self.c, self.d], client_id=client_id, next_chains=self.conv_chain(self.next_chain), prev_chains=self.conv_chain(self.prev_chain))
 
   def create_server(self, si: ServerInfo, connection_stub: ConnectionStub) -> Server:
     # TODO: Implement this method
