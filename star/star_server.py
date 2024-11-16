@@ -9,7 +9,7 @@ from typing import Optional, Final, Tuple, List
 from core.logger import server_logger
 from core.message import JsonMessage, JsonMessage
 from core.network import ConnectionStub
-from core.server import Server, ServerInfo
+from core.server import Server, ServerInfo, QueueElement
 from collections import defaultdict
 
 class RequestType(Enum):
@@ -113,7 +113,7 @@ class KVAckRequest:
   def __str__(self) -> str:
     return str(self._json_message)
 
-  @version.setter
+  @tail_verif.setter
   def tail_verif(self, ans: bool) -> None:
     self._json_message['tail_verif'] = ans
 
@@ -133,31 +133,31 @@ class StarServer(Server):
     self.versions: defaultdict[str, Tuple[str, Optional[int]]] = defaultdict(lambda: ('0', 0))
     self.versionState: defaultdict[str, str] = defaultdict(lambda: ('C'))# this will maintain the dictionary from the keys to the latest version state whether clean or dirty
 
-  def _process_req(self, req_q: queue.Queue[Tuple[JsonMessage, socket.socket]]) -> JsonMessage:
-    while True:
-      req = req_q.get()
-      msg: JsonMessage = req[0]
-      client_sock = req[1]
-      try:
-        # cmd.handle(self.state)
-        if msg.get("type") == RequestType.GET.name:
-          response = self._get(KVGetRequest(msg))
-        elif msg.get("type") == RequestType.SET.name:
-          response = self._set(KVSetRequest(msg))
-        elif msg.get("type") == RequestType.ACK.name:
-          response = self._ack(KVAckRequest(msg))
-        else:
-          server_logger.critical("Invalid message type")
-          response = JsonMessage({"status": "Unexpected type"})
-        
-        if response is not None:
-          # _logger.debug(f"Sending message to {addr}: {response}")
-          server_logger.debug(f"Sending message from the {response}")
-          client_sock.sendall(response.serialize())
+  # def _process_req(self, req_q: queue.Queue[Tuple[JsonMessage, socket.socket]]) -> JsonMessage:
+  def _process_req(self, msg: JsonMessage) -> JsonMessage:
+    if msg.get("type") == RequestType.GET.name:
+      return self._get(KVGetRequest(msg))
+    elif msg.get("type") == RequestType.SET.name:
+      return self._set(KVSetRequest(msg))
+    # make a request here to process the confirmation acknowledgment from the tail
+    # and make the version clean
+    elif msg.get("type") == RequestType.ACK.name:
+      # here you have received a ack from the tail for the version that has become clean
+      # so make the apt changes in your dictionary
+      return self._ack(KVAckRequest(msg))
+    else:
+      server_logger.critical("Invalid message type")
+      return JsonMessage({"status": "Unexpected type"})
 
-      except Exception as e:
-        server_logger.exception(e)
-        server_logger.critical("The server got exception")
+  def _cmd_thread(self) -> None:
+    while True:
+      wrt=self.command_queue.get()
+      if wrt.val is not None:
+        self.d[wrt.key]=wrt.key
+      if wrt.version is not None:
+        self.versions[wrt.key]=wrt.version
+      if wrt.versionState is not None:
+        self.versionState[wrt.key]=wrt.versionState
 
   def _get(self, req: KVGetRequest) -> JsonMessage:
     _logger = server_logger.bind(server_name=self._info.name)
@@ -165,7 +165,6 @@ class StarServer(Server):
     if (req.key not in self.d):
       return JsonMessage({"status": "OK", "val": 0})
 
-    # last_version = self.versions[req.key]
     if (self._info.name==self.tail or self.versionState[req.key]=='C'):
       val = self.d[req.key]
       version_no = self.versions[req.key][1]
@@ -178,9 +177,12 @@ class StarServer(Server):
         val = response["val"]
         version_no = response["version_no"]
         if self.versions[req.key][1] is not None and self.versions[req.key][1] <= version_no:
-          self.versions[req.key] = (self.versions[req.key][0], version_no)
-          self.d[req.key] = val
-          self.versionState[req.key] = 'C'
+          # we need to put this in command queue
+          self.command_queue.put(QueueElement(req.key, val, (self.versions[req.key][0], version_no), 'C'))
+          # self.versions[req.key] = (self.versions[req.key][0], version_no)
+          # self.d[req.key] = val
+          # self.versionState[req.key] = 'C'
+
     _logger.debug(f"Getting {req.key} as {val}")
     return JsonMessage({"status": "OK", "val": val, "version_no": version_no})
 
@@ -188,23 +190,27 @@ class StarServer(Server):
     _logger = server_logger.bind(server_name=self._info.name)
     _logger.debug(f"Setting {req.key} to {req.val}")
 
-    if req.key in self.d:
-      if req.version is None and self._info.name == self.tail:
-        version_num = self.versions[req.key][1] + 1
-      else:
-        version_num = req.version
-
-      prev_version_num=self.versions[req.key][1]
-
+    if req.version is None and self._info.name == self.tail:
+      version_num = self.versions[req.key][1] + 1
     else:
       version_num = req.version
-      prev_version_num = 0
+
+    prev_version_num=self.versions[req.key][1]
+
+    # else:
+    #   version_num = req.version
+    #   prev_version_num = 0
 
     if self._info.name != self.tail and (prev_version_num is None or version_num is None or prev_version_num<version_num): # we dont apply to write to the tail till everyone has seen it
       # if we have prev vn none then we apply every write, if we have new vn none then too we apply every write, in case prev vn and vn have a numberical value, we dont apply the new write
-      self.d[req.key] = req.val 
-      self.versionState[req.key] = 'D'
-      self.versions[req.key] = (req.request_id, version_num) # we need to ensure max
+      
+      
+      # we need to put this in command queue
+      self.command_queue.put(QueueElement(req.key, req.val,(req.request_id, version_num), 'D'))
+      # self.d[req.key] = req.val 
+      # self.versionState[req.key] = 'D'
+      # self.versions[req.key] = (req.request_id, version_num) # we need to ensure max
+
     req.version = version_num
 
     next_server = req.next_chain[self._info.name]
@@ -221,8 +227,11 @@ class StarServer(Server):
           # the purpose of not doing it initially was that all the servers may not have seen the dirty pending write but now they have
           # it is necessary to define it here as we need some initial value in the version state dict for the key 
           # self.versionState[req.key] = 'C' # we will never have a dirty entry here
-          self.d[req.key] = req.val # no need to store the new value in a temp buffer
-          self.versions[req.key] = (req.request_id, version_num)
+
+          # we need to put this in command queue 
+          self.command_queue.put(QueueElement(req.key, req.val, (req.request_id, version_num)))
+          # self.d[req.key] = req.val # no need to store the new value in a temp buffer
+          # self.versions[req.key] = (req.request_id, version_num)
 
       return temp
 
@@ -231,8 +240,11 @@ class StarServer(Server):
       if self._info.name == self.tail:
         tail_verif = True
         # self.versionState[req.key] = 'C'
-        self.d[req.key] = req.val
-        self.versions[req.key] = (req.request_id, version_num)
+
+        # put this in command queue
+        self.command_queue.put(QueueElement(req.key, req.val,(req.request_id, version_num) ))
+        # self.d[req.key] = req.val
+        # self.versions[req.key] = (req.request_id, version_num)
 
       else:
 
@@ -254,18 +266,20 @@ class StarServer(Server):
     tail_verif = req.tail_verif
 
     prev_version_num=self.versions[req.key][1]
-
+    # print(f"INSIDE ACK {self._info.name}")
     if self.versions[req.key][0] == request_id:
       if tail_verif and (prev_version_num is None or prev_version_num<version): # checking this ensures that we dont clean the version for the servers that come after the tail and get the acks before the tail
-        self.versions[req.key] = (request_id, version) # the second check ensures we dont overwrite the latest version just because an ack came late
-        self.versionState[req.key] = 'C'
+        # put this in command queue
+        self.command_queue.put(QueueElement(req.key, version=(request_id, version), versionState='C'))
+        # self.versions[req.key] = (request_id, version) # the second check ensures we dont overwrite the latest version just because an ack came late
+        # self.versionState[req.key] = 'C'
 
       if not tail_verif and self._info.name == self.tail:
         req.tail_verif = True
-        self.versionState[req.key] = 'C'
+        # self.versionState[req.key] = 'C'
 
     prev_server = req.prev_chain[self._info.name]
-
+    # print(f"JUST BEFORE SENDING ACKS {self._info.name}")
     if prev_server is not None:
       return self._connection_stub.send(from_=self._info.name, to=prev_server, message=req.json_msg)
     else: # we have reached the start of the chain

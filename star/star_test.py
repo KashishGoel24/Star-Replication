@@ -33,28 +33,32 @@ class TestSTAR(unittest.TestCase):
     def setter(c: StarClient, iters: int, name: str) -> None:
       logger = client_logger.bind(server_name=name)
       for i in range(iters):
-        print(printhi(6))
+        # print(printhi(6))
         logger.info(f"Setting key = {i}")
         c.set("key", f"{i}")
-        print(printhi(7))
+        # print(printhi(7))
         logger.info(f"Set key = {i}")
+        print(f"SETTER ITERATION {i} DONE")
 
     def getter(c: StarClient, iters: int, name: str) -> None:
       logger = client_logger.bind(server_name=name)
-      for _ in range(iters):
-        print(printhi(8))
+      for i in range(iters):
+        # print(printhi(8))
         logger.info(f"Getting key")
         status, val = c.get("key")
         self.assertTrue(status, msg=val)
-        print(printhi(9))
+        # print(printhi(9))
         logger.info(f"Get key = {val}")
+        print(f"GETTER ITERATION {i} DONE")
 
     try:
       client1 = self.star.connect(1)
       client2 = self.star.connect(2)
-      print(printhi(3))
+      # print(printhi(3))
       client1.set("key", "0")
-      print(printhi(4))
+      # print(printhi(4))
+      print(f"FIRST SET DONE")
+      # time.sleep(10)
       s = threading.Thread(target=setter, args=(client1, 10, "worker_0"))
       g = threading.Thread(target=getter, args=(client2, 10, "worker_1"))
       s.start()

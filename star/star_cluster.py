@@ -38,7 +38,9 @@ class StarClient():
 
   # need to implement this
   def get(self, key: str) -> tuple[bool, Optional[str]]:
-    server=self.conns[self._get_server()]
+    server_number=self._get_server()
+    server=self.conns[server_number]
+    print(f"sending the request to get key: {key} to server: {server_number}")
     response: Optional[JsonMessage] = server.send(JsonMessage({"type": "GET", "key": key}))
     assert response is not None
     if response["status"] == "OK":
