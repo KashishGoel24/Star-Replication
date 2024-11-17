@@ -33,12 +33,14 @@ class ServerInfo:
 
 class QueueElement:
   key: str
+  reqType: str
   val: Optional[str]
   version: Optional[Tuple[str, Optional[int]]]
   versionState: Optional[str]
 
-  def __init__(self, key: str, val: Optional[str]=None, version: Optional[Tuple[str, Optional[int]]]=None, versionState: Optional[str]=None):
+  def __init__(self, key: str,reqType: str, val: Optional[str]=None, version: Optional[Tuple[str, Optional[int]]]=None, versionState: Optional[str]=None):
     self.key=key
+    self.reqType = reqType
     self.val=val
     self.version=version
     self.versionState=versionState

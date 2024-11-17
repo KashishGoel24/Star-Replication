@@ -8,7 +8,7 @@ from core.network import TcpClient, ConnectionStub
 from core.server import ServerInfo, Server
 
 # START_PORT: Final[int] = 9900
-START_PORT: Final[int] = 8900
+START_PORT: Final[int] = 9000
 POOL_SZ = 32
 
 class StarClient():
@@ -28,10 +28,11 @@ class StarClient():
   
   
   def set(self, key: str, val: str) -> bool:
-    server_number=self._get_server()
+    # server_number=self._get_server
+    server_number = 2
     request_id = "client_no" + str(self.id) + "req" + str(self.request_no)
     self.request_no += 1
-    print("sending the request to set the key:", key, "to val:", val, "to server:", server_number)
+    # print("sending the request to set the key:", key, "to val:", val, "to server:", server_number)
     response: Optional[JsonMessage] = self.conns[server_number].send(JsonMessage({"type": "SET", "key": key, "val": val, "c_id": self.id, "next_chain": self.next_chains[server_number], "prev_chain": self.prev_chains[server_number], "request_id": request_id}))
     assert response is not None
     return response["status"] == "OK"
@@ -40,7 +41,7 @@ class StarClient():
   def get(self, key: str) -> tuple[bool, Optional[str]]:
     server_number=self._get_server()
     server=self.conns[server_number]
-    print(f"sending the request to get key: {key} to server: {server_number}")
+    # print(f"sending the request to get key: {key} to server: {server_number}")
     response: Optional[JsonMessage] = server.send(JsonMessage({"type": "GET", "key": key}))
     assert response is not None
     if response["status"] == "OK":
@@ -99,6 +100,7 @@ class StarCluster(ClusterManager):
       },
       sock_pool_size=POOL_SZ,
     )
+  
   def conv_chain(self, chain_list:list[dict[ServerInfo, Optional[ServerInfo]]])->list[dict[str, Optional[str]]]:
     return [{key.name: (value.name if value is not None else None) for key, value in chain.items()}
       for chain in chain_list]

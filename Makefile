@@ -36,7 +36,7 @@ cr: setup
 	python3 -m unittest cr.cr_test.TestCR.test_gen_history
 
 craq: setup
-	python3 -m unittest craq.craq_test.TestCRAQ.test_gen_history
+	python3 -m unittest craq.craq_test.TestCRAQ.test_throughput
 
 star: setup
-	python3 -m unittest star.star_test.TestSTAR.test_gen_history
+	python3 -m unittest star.star_test.TestSTAR.test_throughput

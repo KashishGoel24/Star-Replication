@@ -31,7 +31,6 @@ class KVGetRequest:
   def json_msg(self) -> JsonMessage:
     return self._json_message
 
-
 class KVSetRequest:
   def __init__(self, msg: JsonMessage):
     self._json_message = msg
@@ -129,9 +128,10 @@ class StarServer(Server):
     self.prev: Final[Optional[str]] = prev if prev is None else prev.name
     self.tail: Final[str] = tail.name
     self.d: dict[str, str] = {} # Key-Value store
-    # self.versions: dict[str, Tuple[str, Optional[int]]] = {} # this will maintain the dictionary from the keys to the version numbers 
     self.versions: defaultdict[str, Tuple[str, Optional[int]]] = defaultdict(lambda: ('0', 0))
     self.versionState: defaultdict[str, str] = defaultdict(lambda: ('C'))# this will maintain the dictionary from the keys to the latest version state whether clean or dirty
+    self.buffer: dict[Tuple[str, str], Tuple[int, str]] = {} # this is mapping (key, request id) to (version number, version state) 
+    self.pendingSETRequests: int = 0  # this will just keep track of the number of set requests that are pending 
 
   # def _process_req(self, req_q: queue.Queue[Tuple[JsonMessage, socket.socket]]) -> JsonMessage:
   def _process_req(self, msg: JsonMessage) -> JsonMessage:
@@ -152,12 +152,18 @@ class StarServer(Server):
   def _cmd_thread(self) -> None:
     while True:
       wrt=self.command_queue.get()
-      if wrt.val is not None:
-        self.d[wrt.key]=wrt.key
-      if wrt.version is not None:
-        self.versions[wrt.key]=wrt.version
-      if wrt.versionState is not None:
-        self.versionState[wrt.key]=wrt.versionState
+      if wrt.reqType == "SET":
+        self.pendingSETRequests += 1
+        self.buffer[(wrt.key, wrt.version[0])] = (wrt.version[1], wrt.versionState)
+      elif wrt.reqType == "ACK":
+        self.pendingSETRequests -= 1
+        self.buffer.pop((wrt.key, wrt.version[0]))
+      if wrt.reqType == "ACK" or wrt.reqType == "GET":
+        if wrt.version[1] >= self.versions[req.key][1]:
+          self.d[wrt.key]=wrt.key
+          self.versions[wrt.key]=wrt.version
+          if wrt.versionState is not None:
+            self.versionState[wrt.key]=wrt.versionState
 
   def _get(self, req: KVGetRequest) -> JsonMessage:
     _logger = server_logger.bind(server_name=self._info.name)
@@ -178,7 +184,7 @@ class StarServer(Server):
         version_no = response["version_no"]
         if self.versions[req.key][1] is not None and self.versions[req.key][1] <= version_no:
           # we need to put this in command queue
-          self.command_queue.put(QueueElement(req.key, val, (self.versions[req.key][0], version_no), 'C'))
+          self.command_queue.put(QueueElement(key=req.key, reqType="GET", val=val, version=(self.versions[req.key][0], version_no), versionState='C'))
           # self.versions[req.key] = (self.versions[req.key][0], version_no)
           # self.d[req.key] = val
           # self.versionState[req.key] = 'C'
@@ -190,23 +196,23 @@ class StarServer(Server):
     _logger = server_logger.bind(server_name=self._info.name)
     _logger.debug(f"Setting {req.key} to {req.val}")
 
+    # assigning the version number here
     if req.version is None and self._info.name == self.tail:
-      version_num = self.versions[req.key][1] + 1
+      # version_num = self.versions[req.key][1] + 1
+      # will later implement the idea of ticketing lock - rn implemented the idea written down in changes.txt
+      version_num = self.versions[req.key][1] + self.pendingSETRequests
+      # print("tail is giving the version number", version_num)
     else:
       version_num = req.version
 
     prev_version_num=self.versions[req.key][1]
-
-    # else:
-    #   version_num = req.version
-    #   prev_version_num = 0
 
     if self._info.name != self.tail and (prev_version_num is None or version_num is None or prev_version_num<version_num): # we dont apply to write to the tail till everyone has seen it
       # if we have prev vn none then we apply every write, if we have new vn none then too we apply every write, in case prev vn and vn have a numberical value, we dont apply the new write
       
       
       # we need to put this in command queue
-      self.command_queue.put(QueueElement(req.key, req.val,(req.request_id, version_num), 'D'))
+      self.command_queue.put(QueueElement(key=req.key, reqType="SET", val=req.val, version=(req.request_id, version_num), versionState='D'))
       # self.d[req.key] = req.val 
       # self.versionState[req.key] = 'D'
       # self.versions[req.key] = (req.request_id, version_num) # we need to ensure max
@@ -223,31 +229,26 @@ class StarServer(Server):
         # it may happen that by the time we come here another latest write has been done 
         # hence we should check that the version number is greater or equal
         if req.key not in self.versions or self.versions[req.key][1] <= version_num:
-          # i think we can make it clean here
-          # the purpose of not doing it initially was that all the servers may not have seen the dirty pending write but now they have
-          # it is necessary to define it here as we need some initial value in the version state dict for the key 
-          # self.versionState[req.key] = 'C' # we will never have a dirty entry here
-
           # we need to put this in command queue 
-          self.command_queue.put(QueueElement(req.key, req.val, (req.request_id, version_num)))
+          assert version_num is not None
+          self.command_queue.put(QueueElement(key=req.key, reqType="SET", val=req.val, version=(req.request_id, version_num)))
+          # self.versionState[req.key] = 'C' # we will never have a dirty entry here
           # self.d[req.key] = req.val # no need to store the new value in a temp buffer
           # self.versions[req.key] = (req.request_id, version_num)
 
       return temp
 
     else:
-
       if self._info.name == self.tail:
         tail_verif = True
-        # self.versionState[req.key] = 'C'
-
         # put this in command queue
-        self.command_queue.put(QueueElement(req.key, req.val,(req.request_id, version_num) ))
+        assert version_num is not None      # have made this assertion to ensure that we are never writing None as the version number on tail server
+        # check if we should make it ack here or set only?
+        self.command_queue.put(QueueElement(key=req.key, reqType="SET", val=req.val, version=(req.request_id, version_num)))
+        # self.versionState[req.key] = 'C'
         # self.d[req.key] = req.val
         # self.versions[req.key] = (req.request_id, version_num)
-
       else:
-
         tail_verif= False
 
       AckMessage = JsonMessage({"type": "ACK", "key": req.key, "ver": version_num, "request_id" : req.request_id, "tail_verif": tail_verif, "prev_chain": req.prev_chain})
@@ -270,7 +271,7 @@ class StarServer(Server):
     if self.versions[req.key][0] == request_id:
       if tail_verif and (prev_version_num is None or prev_version_num<version): # checking this ensures that we dont clean the version for the servers that come after the tail and get the acks before the tail
         # put this in command queue
-        self.command_queue.put(QueueElement(req.key, version=(request_id, version), versionState='C'))
+        self.command_queue.put(QueueElement(key=req.key, reqType="ACK", version=(request_id, version), versionState='C'))
         # self.versions[req.key] = (request_id, version) # the second check ensures we dont overwrite the latest version just because an ack came late
         # self.versionState[req.key] = 'C'
 

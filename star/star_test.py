@@ -38,7 +38,7 @@ class TestSTAR(unittest.TestCase):
         c.set("key", f"{i}")
         # print(printhi(7))
         logger.info(f"Set key = {i}")
-        print(f"SETTER ITERATION {i} DONE")
+        # print(f"SETTER ITERATION {i} DONE")
 
     def getter(c: StarClient, iters: int, name: str) -> None:
       logger = client_logger.bind(server_name=name)
@@ -49,7 +49,7 @@ class TestSTAR(unittest.TestCase):
         self.assertTrue(status, msg=val)
         # print(printhi(9))
         logger.info(f"Get key = {val}")
-        print(f"GETTER ITERATION {i} DONE")
+        # print(f"GETTER ITERATION {i} DONE")
 
     try:
       client1 = self.star.connect(1)
@@ -65,7 +65,7 @@ class TestSTAR(unittest.TestCase):
       g.start()
       s.join()
       g.join()
-      print(printhi(5))
+      # print(printhi(5))
     finally:
       remove_client_logfile(file_sink_id)
 
@@ -117,15 +117,15 @@ class TestSTAR(unittest.TestCase):
 
     try:
       # Connect clients
-      client1 = self.star.connect()
+      # client1 = self.star.connect(1)
       num_getters = 1
-      clients = [self.star.connect() for _ in range(num_getters)]
+      clients = [self.star.connect(i) for i in range(num_getters)]
 
       num_setters = 1
-      clients_setter = [self.star.connect() for _ in range(num_setters)]
+      clients_setter = [self.star.connect(j+num_getters) for j in range(num_setters)]
 
       # Set the initial value
-      client1.set("key", "0")
+      # client1.set("key", "0")
 
       # start num_setters threads for setters
       setter_threads = [
@@ -153,8 +153,8 @@ class TestSTAR(unittest.TestCase):
           time.sleep(1)
 
       # Join the threads
-      # for s_thread in setter_threads:
-      #     s_thread.join()
+      for s_thread in setter_threads:
+          s_thread.join()
       for g_thread in getter_threads:
           g_thread.join()
 
@@ -163,6 +163,8 @@ class TestSTAR(unittest.TestCase):
       writes_per_second = self.total_sets / total_time
       reads_per_second = self.total_gets / total_time
 
+      print(f"Total number of sets: {self.total_sets}")
+      print(f"Total number of gets : {self.total_gets}")
       print(f"Write throughput: {writes_per_second:.2f} writes/s")
       print(f"Read throughput: {reads_per_second:.2f} reads/s")
 
