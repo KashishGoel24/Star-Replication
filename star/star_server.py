@@ -12,6 +12,8 @@ from core.network import ConnectionStub
 from core.server import Server, ServerInfo, QueueElement
 from collections import defaultdict
 
+from threading import Lock
+
 class RequestType(Enum):
   SET = 1
   GET = 2
@@ -131,7 +133,8 @@ class StarServer(Server):
     self.versions: defaultdict[str, Tuple[str, Optional[int]]] = defaultdict(lambda: ('0', 0))
     self.versionState: defaultdict[str, str] = defaultdict(lambda: ('C'))# this will maintain the dictionary from the keys to the latest version state whether clean or dirty
     self.buffer: dict[Tuple[str, str], Tuple[int, str, int]] = {} # this is mapping (key, request id) to (version number, version state, value) 
-    self.pendingSETRequests: int = 0  # this will just keep track of the number of set requests that are pending 
+    self.next_version: dict[str, int] = defaultdict(lambda: (0))  # this will just keep track of the number of set requests that are pending 
+    self.version_locks: dict[str, Lock] = defaultdict(Lock)  # Per-key locks
 
   # def _process_req(self, req_q: queue.Queue[Tuple[JsonMessage, socket.socket]]) -> JsonMessage:
   def _process_req(self, msg: JsonMessage) -> JsonMessage:
@@ -149,10 +152,8 @@ class StarServer(Server):
     while True:
       wrt=self.command_queue.get()
       if wrt.reqType == "SET":
-        self.pendingSETRequests += 1
         self.buffer[(wrt.key, wrt.version[0])] = (wrt.version[1], wrt.versionState, wrt.val)
       elif wrt.reqType == "ACK":
-        self.pendingSETRequests -= 1
         ele = self.buffer.pop((wrt.key, wrt.version[0]))
         if wrt.version[1] >= self.versions[wrt.key][1]:
           self.d[wrt.key]=ele[2]
@@ -208,7 +209,9 @@ class StarServer(Server):
     # assigning the version number here
     if req.version is None and self._info.name == self.tail:
       # will later implement the idea of ticketing lock - rn implemented the idea written down in changes.txt
-      version_num = self.versions[req.key][1] + self.pendingSETRequests + 1
+      with self.version_locks[req.key]:
+        version_num = self.next_version[req.key]+1
+        self.next_version[req.key]=version_num
     else:
       version_num = req.version
     prev_version_num=self.versions[req.key][1]
@@ -219,7 +222,7 @@ class StarServer(Server):
       print(f"{self._info.name} putting the set request in the buffer")
       # we can directly do it here rather than puttng it into the queue because this doesn't interfere with the main dictionaries
       # self.command_queue.put(QueueElement(key=req.key, reqType="SET", val=req.val, version=(req.request_id, version_num), versionState='D'))
-      self.pendingSETRequests += 1
+      # self.pendingSETRequests[req.key] += 1
       self.buffer[(req.key, req.request_id)] = (version_num, 'D', req.val)
 
     req.version = version_num
@@ -231,9 +234,10 @@ class StarServer(Server):
         if req.key not in self.versions or self.versions[req.key][1] < version_num:
           assert version_num is not None
           # self.command_queue.put(QueueElement(key=req.key, reqType="SET", val=req.val, version=(req.request_id, version_num)))
-          self.versionState[req.key] = 'C'
-          self.d[req.key] = req.val
-          self.versions[req.key] = (req.request_id, version_num)
+          with self.version_locks[req.key]:                      
+            self.versionState[req.key] = 'C'
+            self.d[req.key] = req.val
+            self.versions[req.key] = (req.request_id, version_num)
       return temp
 
     else:

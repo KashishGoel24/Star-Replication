@@ -39,4 +39,4 @@ craq: setup
 	python3 -m unittest craq.craq_test.TestCRAQ.test_throughput
 
 star: setup
-	python3 -m unittest star.star_test.TestSTAR.test_basic
+	python3 -m unittest star.star_test.TestSTAR.test_multiple_keys
