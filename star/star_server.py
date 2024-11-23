@@ -160,7 +160,7 @@ class StarServer(Server):
           if wrt.versionState is not None:
             self.versionState[wrt.key]=wrt.versionState
       if wrt.reqType == "GET":
-        if wrt.version[1] >= self.versions[req.key][1]:
+        if wrt.version[1] >= self.versions[wrt.key][1]:
           self.d[wrt.key]=wrt.val
           self.versions[wrt.key]=wrt.version
           if wrt.versionState is not None:
@@ -174,7 +174,8 @@ class StarServer(Server):
     # if (req.key not in self.d):
     #   return JsonMessage({"status": "OK", "val": 0})
 
-    if ((self._info.name == self.tail) or not any(req.key == key for key, _ in self.buffer.items())):
+    if ((self._info.name == self.tail) or (not any(req.key == key for key, _ in self.buffer.keys()))):
+      print("in here")
       val = self.d[req.key]
       version_no = self.versions[req.key][1]
     else:
@@ -215,7 +216,7 @@ class StarServer(Server):
     # if self._info.name != self.tail and (prev_version_num is None or version_num is None or prev_version_num<version_num): 
     if self._info.name != self.tail: 
       # we need to put this in command queue
-      print(f"{self._info.name} putting set request in command queue")
+      print(f"{self._info.name} putting the set request in the buffer")
       # we can directly do it here rather than puttng it into the queue because this doesn't interfere with the main dictionaries
       # self.command_queue.put(QueueElement(key=req.key, reqType="SET", val=req.val, version=(req.request_id, version_num), versionState='D'))
       self.pendingSETRequests += 1
