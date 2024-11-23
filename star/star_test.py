@@ -241,6 +241,9 @@ class TestSTAR(unittest.TestCase):
       sets = 0
       while True:
         with self.lock:
+          # logger_instance.info(f"Setting key = {self.total_sets}")
+          # c.set("key", f"{self.total_sets}")
+          # logger_instance.info(f"Set key = {self.total_sets}")
           logger_instance.info(f"Setting key = {sets}")
           c.set("key", f"{sets}")
           logger_instance.info(f"Set key = {sets}")
@@ -271,10 +274,10 @@ class TestSTAR(unittest.TestCase):
     try:
       # Connect clients
       # client1 = self.star.connect(1)
-      num_getters = 3
+      num_getters = 5
       clients = [self.star.connect(i) for i in range(num_getters)]
 
-      num_setters = 3
+      num_setters = 5
       clients_setter = [self.star.connect(j+num_getters) for j in range(num_setters)]
 
       # Set the initial value
