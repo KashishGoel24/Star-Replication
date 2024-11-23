@@ -28,12 +28,12 @@ class StarClient():
   
   
   def set(self, key: str, val: str) -> bool:
-    # server_number=self._get_server
-    server_number = 2
+    server_number=self._get_server()
     request_id = "client_no" + str(self.id) + "req" + str(self.request_no)
     self.request_no += 1
-    # print("sending the request to set the key:", key, "to val:", val, "to server:", server_number)
+    print("SET REQUEST FROM CLIENT",self.id,"FOR", key, "TO VAL:", val, "TO SERVER:", server_number,"WITH REQUEST ID", request_id)
     response: Optional[JsonMessage] = self.conns[server_number].send(JsonMessage({"type": "SET", "key": key, "val": val, "c_id": self.id, "next_chain": self.next_chains[server_number], "prev_chain": self.prev_chains[server_number], "request_id": request_id}))
+    print("SET REQUEST FROM CLIENT",self.id,"FOR", key, "RESPONSE:", response,"WITH REQUEST ID", request_id)
     assert response is not None
     return response["status"] == "OK"
 
@@ -42,7 +42,9 @@ class StarClient():
     server_number=self._get_server()
     server=self.conns[server_number]
     # print(f"sending the request to get key: {key} to server: {server_number}")
+    print("GET REQUEST FROM CLIENT",self.id,"FOR", key, "TO SERVER:", server_number)
     response: Optional[JsonMessage] = server.send(JsonMessage({"type": "GET", "key": key}))
+    print("GET REQUEST FROM CLIENT",self.id,"FOR", key, "RESPONSE:", response)
     assert response is not None
     if response["status"] == "OK":
       return True, response["val"]
