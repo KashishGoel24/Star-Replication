@@ -1,1 +1,4 @@
 1. ask the tail only for the version number and not the complete object
+2. ticketing lock for the new version number
+3. adding nodes in the system (scalability)
+4. can remove ack?
