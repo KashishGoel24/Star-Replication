@@ -1,4 +1,5 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 19:44:57 INFO worker_1 Setting key = 0
 19:44:57 INFO worker_2 Setting key = 0
 19:44:57 INFO worker_3 Setting key = 0
@@ -48246,6 +48247,8 @@
 19:45:07 INFO worker_20 Getting key
 19:45:07 INFO worker_20 Get key = 9
 =======
+=======
+>>>>>>> parent of 44e3dbb... Revert "Dev"
 01:37:01 INFO worker_1 Setting key = 0
 01:37:01 INFO worker_2 Setting key = 0
 01:37:01 INFO worker_3 Setting key = 0
@@ -90694,4 +90697,7 @@
 01:37:11 INFO worker_6 Get key = 9
 01:37:11 INFO worker_6 Getting key
 01:37:11 INFO worker_6 Get key = 9
+<<<<<<< HEAD
+>>>>>>> parent of 44e3dbb... Revert "Dev"
+=======
 >>>>>>> parent of 44e3dbb... Revert "Dev"

@@ -281,4 +281,8 @@ class StarServer(Server):
     if prev_server is not None:
       return self._connection_stub.send(from_=self._info.name, to=prev_server, message=req.json_msg)
     else:
+<<<<<<< HEAD
       return JsonMessage({"status": "OK"})
+=======
+      return JsonMessage({"status": "OK"})
+>>>>>>> parent of 44e3dbb... Revert "Dev"
