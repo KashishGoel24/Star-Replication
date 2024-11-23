@@ -52,7 +52,7 @@ class TestSTAR(unittest.TestCase):
       logger_c1 = client_logger.bind(server_name="Client 1")
       logger_c2 = client_logger.bind(server_name="Client 2")
       logger_c1.info(f"Set key = {2}")
-      time.sleep(20)
+      # time.sleep(20)
       status, val = client2.get("key")
       self.assertTrue(status, msg=val)
       logger_c2.info(f"Get key = {val}")
