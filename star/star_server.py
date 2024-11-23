@@ -18,8 +18,22 @@ class RequestType(Enum):
   SET = 1
   GET = 2
   ACK = 3
+  GET_VN = 4  
 
 class KVGetRequest:
+  def __init__(self, msg: JsonMessage):
+    self._json_message = msg
+    assert "key" in self._json_message, self._json_message
+
+  @property
+  def key(self) -> str:
+    return self._json_message["key"]
+
+  @property
+  def json_msg(self) -> JsonMessage:
+    return self._json_message
+
+class KVGetVNRequest:
   def __init__(self, msg: JsonMessage):
     self._json_message = msg
     assert "key" in self._json_message, self._json_message
@@ -143,6 +157,8 @@ class StarServer(Server):
       return self._set(KVSetRequest(msg))
     elif msg.get("type") == RequestType.ACK.name:
       return self._ack(KVAckRequest(msg))
+    elif msg.get("type") == RequestType.GET_VN.name and (self._info.name == self.tail):
+      return self._get_vn(KVGetVNRequest(msg))
     else:
       server_logger.critical("Invalid message type")
       return JsonMessage({"status": "Unexpected type"})
@@ -174,16 +190,27 @@ class StarServer(Server):
       version_no = self.versions[req.key][1]
     else:
       # get the value from the tail and define it as val
-      valMessage = JsonMessage({"type": "GET", "key": req.key})
+      valMessage = JsonMessage({"type": "GET_VN", "key": req.key})
       response: Optional[JsonMessage] = self._connection_stub.send(from_=self._info.name, to=self.tail, message=valMessage)
       assert response is not None
       if response["status"] == "OK":
-        val = response["val"]
+        request_id = response["request_id"]
         version_no = response["version_no"]
-        self.command_queue.put(QueueElement(key=req.key, reqType="GET", val=val, version=(self.versions[req.key][0], version_no), versionState='C'))
+        # we may not have it in the buffer, check the version in the dictionary
+        if self.versions[req.key] == (request_id, version_no):
+          val=self.d[req.key]
+        else:
+          val=self.buffer[(req.key, request_id)][2]
+        self.command_queue.put(QueueElement(key=req.key, reqType="GET", val=val, version=(request_id, version_no), versionState='C'))
 
     _logger.debug(f"Getting {req.key} as {val}")
     return JsonMessage({"status": "OK", "val": val, "version_no": version_no})
+  
+  def _get_vn(self, req: KVGetVNRequest) -> JsonMessage:
+    _logger = server_logger.bind(server_name=self._info.name)
+    request_id, version_no=self.versions[req.key]
+    _logger.debug(f"Getting {req.key}'s version numbers {version_no} and request id {request_id}")
+    return JsonMessage({"status": "OK", "version_no": version_no, "request_id": request_id})
 
   def _set(self, req: KVSetRequest) -> JsonMessage:
     _logger = server_logger.bind(server_name=self._info.name)
@@ -254,4 +281,8 @@ class StarServer(Server):
     if prev_server is not None:
       return self._connection_stub.send(from_=self._info.name, to=prev_server, message=req.json_msg)
     else:
+<<<<<<< HEAD
       return JsonMessage({"status": "OK"})
+=======
+      return JsonMessage({"status": "OK"})
+>>>>>>> parent of 44e3dbb... Revert "Dev"

@@ -1,0 +1,2 @@
+1. what if tail gets two concurrent writes
+2. add how we assign the version numbers to the set requests
