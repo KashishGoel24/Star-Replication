@@ -30,7 +30,7 @@ class StarClient():
     """
     requesting a server to set a value at a key
     """
-    server_number = server_number if server_number is not None else self.get_server()
+    server_number = server_number if server_number is not None else self._get_server()
 
     # forming the request_id, which is the combination of the client id and its requests so far
     request_id = "client_no" + str(self.id) + "req" + str(self.request_no)
@@ -46,7 +46,7 @@ class StarClient():
     """
     requesting a server for the value at a key
     """
-    server_number = server_number if server_number is not None else self.get_server()
+    server_number = server_number if server_number is not None else self._get_server()
     server=self.conns[server_number]
     response: Optional[JsonMessage] = server.send(JsonMessage({"type": "GET", "key": key}))
     assert response is not None
