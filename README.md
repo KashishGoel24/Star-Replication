@@ -10,8 +10,6 @@ A Distributed Object-Storage System for increased read and write throughputs
 - [Core Library](#core-library)
 - [System Design of Star Replication](#system-design-of-star-replication)
 
-> Check the DESIGN/ folder for understanding the code architecture and design.
-
 ## Objective
 
 We wish to build a distributed object-storage system from scratch and improve the read and write throughput of [`CRAQ: A Distibuted Object-Storage System`](https://www.usenix.org/legacy/event/usenix09/tech/full_papers/terrace/terrace.pdf). We ensure that the read and write histories are linearizable.
