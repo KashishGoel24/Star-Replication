@@ -1,1 +1,6 @@
-*/__pycache__/*
+logs/Python-3.9.0/
+Python-3.9.0/
+**/__pycache__/
+env/
+Python-3.9.0.tgz
+cloud_proj/
