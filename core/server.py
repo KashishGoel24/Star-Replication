@@ -31,20 +31,30 @@ class ServerInfo:
   def __str__(self) -> str:
     return f"Name={self.name},Address={self.host}:{self.port},"
 
+@dataclass
 class QueueElement:
+  """
+  represents a request in the command queue
+  """
   key: str
   reqType: str
   val: Optional[str]
   version: Optional[Tuple[str, Optional[int]]]
   versionState: Optional[str]
 
-  def __init__(self, key: str,reqType: str, val: Optional[str]=None, version: Optional[Tuple[str, Optional[int]]]=None, versionState: Optional[str]=None):
+  def __init__(self, key: str,reqType: str, version: Tuple[str, Optional[int]], val: Optional[str]=None):
+    """
+    Attributes
+      key: the key corresponding to the request
+      reqType: the type of request
+      version: the tuple of request_id and the version number corresponding to the request
+      val: the value (if present) corresponding to the key that has to be set
+    """
+
     self.key=key
     self.reqType = reqType
-    self.val=val
     self.version=version
-    self.versionState=versionState
-
+    self.val=val
 
 class Server(Process):
   """This class represents the CRAQ Server"""
@@ -60,17 +70,12 @@ class Server(Process):
       while True:
         _logger.debug(f"Connected with {addr}")
         err_code, request = recv_message(client_sock)
-        # print("recvd the request from", request)
         if request is None:
           _logger.critical(f"{STATUS_CODE[err_code]}")
           sr = JsonMessage(msg={"error_msg": STATUS_CODE[err_code], "error_code": err_code})
-          # print("REQUEST IS NONE IN HANDLE CLIENT")
         else:
           _logger.debug(f"Received message from {addr}: {request}")
-          # print(f"PUTTING REQ {request} BY SERVER {self._info.name}")
-          sr = self._process_req(request) # we send it to process the request, but here we put things in the queue
-          # here will send the request and the client socket as a tuple and once the server processes the request it will respond to it
-          # req_q.put((request, client_sock))
+          sr = self._process_req(request)
         if sr is not None:
           _logger.debug(f"Sending message to {addr}: {sr}")
           client_sock.sendall(sr.serialize())
@@ -81,10 +86,15 @@ class Server(Process):
       client_sock.close()
 
   def run(self) -> None:
-    # now in this function we first initialise a command queue
-    # we still have the handle client thread
-    # however now that thread will put the commands into the queue that we give as its argument
-    # another thread will take out the requests from the queue and serve them accordingly
+    """
+    modifications-
+      command queue
+      command thread handler
+
+    Different handle client thread put changes (which modify the state of the server) in the command queue.
+    Another thread, call command thread, picks up these requests and applies them to the state of the server
+    """
+    
     self.command_queue = queue.Queue()
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -99,9 +109,6 @@ class Server(Process):
 
     _logger.info(f"Listening on {self._info.host}:{self._info.port}")
 
-    # this will start the command queue handler thread that will extract the messages from the queue and keep serving them
-    # cmd_thread = CmdHandler(state, req_q)
-    # correct the name thing below
     cmd_thread = threading.Thread(target=self._cmd_thread,
           name="CmdHandlerThread")
     cmd_thread.start()
@@ -119,7 +126,6 @@ class Server(Process):
       sock.close()
       for client_handler in client_handlers:
         client_handler.join()
-      # check if joining the cmd handler thread here is correct
       cmd_thread.join()
 
   @abc.abstractmethod
