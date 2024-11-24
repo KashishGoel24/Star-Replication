@@ -276,8 +276,8 @@ class TestSTAR(unittest.TestCase):
       remove_client_logfile(file_sink_id)
 
 
-  # testing the case when we are sending the request to tail and simultaneously reading from it and another server
-  def test_tail_write_read(self):
+  # testing the case when we are sending the request to leader and simultaneously reading from it and another server
+  def test_leader_write_read(self):
     logfile_name = f"logs/{self._testMethodName}.log"
     if os.path.exists(logfile_name):
         os.remove(logfile_name)
@@ -289,7 +289,7 @@ class TestSTAR(unittest.TestCase):
     self.total_gets = 0
     self.lock = threading.Lock()
 
-    tail_server = 3
+    leader_server = 3
 
     def setter(client: StarClient, worker_name: str, server_number: Optional[int] = None):
       logger_instance = client_logger.bind(server_name=worker_name)
@@ -324,15 +324,15 @@ class TestSTAR(unittest.TestCase):
         self.total_gets += gets
 
     try:
-      # Create 1 client for setting values to the tail server
+      # Create 1 client for setting values to the leader server
       client1 = self.star.connect(1)
-      # Create 2 clients for getting values from the tail server and another server
+      # Create 2 clients for getting values from the leader server and another server
       client2 = self.star.connect(2) 
       client3 = self.star.connect(3)
 
       # Create and start threads
-      setter_thread = threading.Thread(target=setter, args=(client1, "worker_1", tail_server))
-      getter_thread1 = threading.Thread(target=getter, args=(client2, "worker_2", tail_server))
+      setter_thread = threading.Thread(target=setter, args=(client1, "worker_1", leader_server))
+      getter_thread1 = threading.Thread(target=getter, args=(client2, "worker_2", leader_server))
       getter_thread2 = threading.Thread(target=getter, args=(client3, "worker_3"))
 
       start_time = time.time()
@@ -364,8 +364,8 @@ class TestSTAR(unittest.TestCase):
       remove_client_logfile(file_sink_id)
 
 
-# test the case when we are writing to two non-tail servers and continuously reading from the tail server
-  def test_non_tail_write_tail_read(self):
+# test the case when we are writing to two non-leader servers and continuously reading from the leader server
+  def test_non_leader_write_leader_read(self):
     logfile_name = f"logs/{self._testMethodName}.log"
     if os.path.exists(logfile_name):
         os.remove(logfile_name)
@@ -377,9 +377,9 @@ class TestSTAR(unittest.TestCase):
     self.total_gets = 0
     self.lock = threading.Lock()
 
-    tail_server = 3
-    first_non_tail = 1
-    second_non_tail = 4
+    leader_server = 3
+    first_non_leader = 1
+    second_non_leader = 4
 
     def setter(client: StarClient, worker_name: str, server_number: Optional[int] = None):
       logger_instance = client_logger.bind(server_name=worker_name)
@@ -414,16 +414,16 @@ class TestSTAR(unittest.TestCase):
         self.total_gets += gets
 
     try:
-      # Create 1 client for setting values to non two tail servers
+      # Create 1 client for setting values to non two leader servers
       client1 = self.star.connect(1)
       client2 = self.star.connect(2) 
-      # Create 2 clients for getting values from the tail server
+      # Create 2 clients for getting values from the leader server
       client3 = self.star.connect(3)
 
       # Create and start threads
-      setter_thread1 = threading.Thread(target=setter, args=(client1, "worker_1", first_non_tail))
-      setter_thread2 = threading.Thread(target=getter, args=(client2, "worker_2", second_non_tail))
-      getter_thread = threading.Thread(target=getter, args=(client3, "worker_3", tail_server))
+      setter_thread1 = threading.Thread(target=setter, args=(client1, "worker_1", first_non_leader))
+      setter_thread2 = threading.Thread(target=getter, args=(client2, "worker_2", second_non_leader))
+      getter_thread = threading.Thread(target=getter, args=(client3, "worker_3", leader_server))
 
       start_time = time.time()
 
@@ -453,8 +453,8 @@ class TestSTAR(unittest.TestCase):
     finally:
       remove_client_logfile(file_sink_id)
 
-# test the case when we are writing to a non-tail server and constantly reading from that non-tail server
-  def test_non_tail_write_non_tail_read(self):
+# test the case when we are writing to a non-leader server and constantly reading from that non-leader server
+  def test_non_leader_write_non_leader_read(self):
     logfile_name = f"logs/{self._testMethodName}.log"
     if os.path.exists(logfile_name):
         os.remove(logfile_name)
@@ -466,7 +466,7 @@ class TestSTAR(unittest.TestCase):
     self.total_gets = 0
     self.lock = threading.Lock()
 
-    non_tail = 1
+    non_leader = 1
 
     def setter(client: StarClient, worker_name: str, server_number: Optional[int] = None):
       logger_instance = client_logger.bind(server_name=worker_name)
@@ -501,14 +501,14 @@ class TestSTAR(unittest.TestCase):
         self.total_gets += gets
 
     try:
-      # Create 1 non tail client for setting values
+      # Create 1 non leader client for setting values
       client1 = self.star.connect(1)
-      # Create 1 non tail client for reading values
+      # Create 1 non leader client for reading values
       client2 = self.star.connect(2) 
       
       # Create and start threads
-      setter_thread = threading.Thread(target=setter, args=(client1, "worker_1", non_tail))
-      getter_thread = threading.Thread(target=getter, args=(client2, "worker_2", non_tail))
+      setter_thread = threading.Thread(target=setter, args=(client1, "worker_1", non_leader))
+      getter_thread = threading.Thread(target=getter, args=(client2, "worker_2", non_leader))
 
       start_time = time.time()  
 
@@ -536,8 +536,8 @@ class TestSTAR(unittest.TestCase):
     finally:
       remove_client_logfile(file_sink_id)
 
-# test the case when we are constantly writing to all servers and then constantly reading from a tail and a non-tail server
-  def test_all_write_tail_non_tail_read(self):
+# test the case when we are constantly writing to all servers and then constantly reading from a leader and a non-leader server
+  def test_all_write_leader_non_leader_read(self):
     logfile_name = f"logs/{self._testMethodName}.log"
     if os.path.exists(logfile_name):
         os.remove(logfile_name)
@@ -549,7 +549,7 @@ class TestSTAR(unittest.TestCase):
     self.total_gets = 0
     self.lock = threading.Lock()
 
-    tail_server = 3
+    leader_server = 3
 
     def setter(client: StarClient, worker_name: str, server_number: Optional[int] = None):
       logger_instance = client_logger.bind(server_name=worker_name)
@@ -599,7 +599,7 @@ class TestSTAR(unittest.TestCase):
       ]
 
       # Create getter threads
-      leader_getter_thread = threading.Thread(target=getter, args=(client5, "worker_6", tail_server))
+      leader_getter_thread = threading.Thread(target=getter, args=(client5, "worker_6", leader_server))
       nonleader_getter_thread = threading.Thread(target=getter, args=(client6, "worker_7"))
 
       start_time = time.time()

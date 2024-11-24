@@ -106,8 +106,8 @@ class KVAckRequest:
     return self._json_message.get("request_id")
   
   @property
-  def tail_verif(self) -> Optional[int]:
-    return self._json_message.get("tail_verif")
+  def leader_verif(self) -> Optional[int]:
+    return self._json_message.get("leader_verif")
   
   @property
   def prev_chain(self) -> dict[ServerInfo, Optional[ServerInfo]]:
@@ -120,9 +120,9 @@ class KVAckRequest:
   def __str__(self) -> str:
     return str(self._json_message)
 
-  @tail_verif.setter
-  def tail_verif(self, ans: bool) -> None:
-    self._json_message['tail_verif'] = ans
+  @leader_verif.setter
+  def leader_verif(self, ans: bool) -> None:
+    self._json_message['leader_verif'] = ans
 
 
 class StarServer(Server):
@@ -240,7 +240,7 @@ class StarServer(Server):
       val = self.d[req.key]
       version_no = self.versions[req.key][1]
     else:
-      # if we have a dirty entry for the key in the buffer, we must ask the tail for the latest version
+      # if we have a dirty entry for the key in the buffer, we must ask the leader for the latest version
 
       valMessage = JsonMessage({"type": "GET", "key": req.key})
       response: Optional[JsonMessage] = self._connection_stub.send(from_=self._info.name, to=self.leader, message=valMessage)
@@ -307,9 +307,9 @@ class StarServer(Server):
     else:
       # if this is the last server in the chain, we need to generate an ack message
       if self._info.name == self.leader:
-        # if we are the leader, we apply the write locally and also set tail_verif in the ack message
-        tail_verif = True
-        assert version_num is not None # have made this assertion to ensure that we are never writing None as the version number on tail server
+        # if we are the leader, we apply the write locally and also set leader_verif in the ack message
+        leader_verif = True
+        assert version_num is not None # have made this assertion to ensure that we are never writing None as the version number on leader server
         
         with self.version_locks[req.key]:
           # using locks on the leader
@@ -317,9 +317,9 @@ class StarServer(Server):
             self.d[req.key] = req.val
             self.versions[req.key] = (req.request_id, version_num)
       else:
-        tail_verif = False
+        leader_verif = False
 
-      AckMessage = JsonMessage({"type": "ACK", "key": req.key, "ver": version_num, "request_id" : req.request_id, "tail_verif": tail_verif, "prev_chain": req.prev_chain})
+      AckMessage = JsonMessage({"type": "ACK", "key": req.key, "ver": version_num, "request_id" : req.request_id, "leader_verif": leader_verif, "prev_chain": req.prev_chain})
       self._connection_stub.send(from_=self._info.name, to=req.prev_chain[self._info.name], message=AckMessage, blocking=False) # non blocking ack
       return JsonMessage({"status": "OK"})
       
@@ -333,16 +333,16 @@ class StarServer(Server):
     key = req.key
     request_id = req.request_id
     version = req.version
-    tail_verif = req.tail_verif
+    leader_verif = req.leader_verif
     
-    if tail_verif:  
-      # if the ack is tail verified then we can apply the changes in the key-value store
-      # note that leader can never get tail verified ack
+    if leader_verif:  
+      # if the ack is leader verified then we can apply the changes in the key-value store
+      # note that leader can never get leader verified ack
       self.command_queue.put(QueueElement(key=req.key, reqType="ACK", version=(request_id, version)))
 
-    if not tail_verif and self._info.name == self.leader:
+    if not leader_verif and self._info.name == self.leader:
       # if it is not verified and we are the leader, we must set it as verified
-      req.tail_verif = True
+      req.leader_verif = True
 
     prev_server = req.prev_chain[self._info.name]
     
