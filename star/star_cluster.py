@@ -7,8 +7,8 @@ from core.message import JsonMessage, JsonMessage
 from core.network import TcpClient, ConnectionStub
 from core.server import ServerInfo, Server
 
-START_PORT: Final[int] = 8000
-POOL_SZ = 32
+START_PORT: Final[int] = 9000
+POOL_SZ = 64
 
 class StarClient():
 
@@ -90,6 +90,8 @@ class StarCluster(ClusterManager):
       self.e:{self.a:self.e, self.b:self.a, self.c:self.b, self.d:self.c, self.e:None},
     }
 
+    self.server_names: list[str] = ['a', 'b', 'c', 'd', 'e']
+
     #fully connected topology
     super().__init__(
       master_name="d",
@@ -124,4 +126,5 @@ class StarCluster(ClusterManager):
     next_chain = self.conv_chain(self.next_chain[si])
     prev_chain = self.conv_chain(self.prev_chain[si])
     return StarServer(info=si, connection_stub=connection_stub,
-                      next_chain=next_chain, prev_chain=prev_chain, leader=self.d)
+                      next_chain=next_chain, prev_chain=prev_chain, leader=self.d,
+                      server_names=self.server_names)

@@ -2,6 +2,7 @@
 
 import json
 from enum import Enum
+import random
 import queue
 import socket
 from typing import Optional, Final, Tuple, List
@@ -63,6 +64,14 @@ class KVSetRequest:
   def prev_chain(self) -> Optional[dict[ServerInfo, Optional[ServerInfo]]]:
     return self._json_message.get("prev_chain")
 
+  @property
+  def leader_verif(self) -> Optional[int]:
+    return self._json_message.get("leader_verif")
+
+  @leader_verif.setter
+  def leader_verif(self, ans: bool) -> None:
+    self._json_message['leader_verif'] = ans
+
   @next_chain.setter
   def next_chain(self, next_chain: dict[ServerInfo, Optional[ServerInfo]]) -> None:
     self._json_message["next_chain"] = next_chain
@@ -81,6 +90,7 @@ class KVSetRequest:
 
   def __str__(self) -> str:
     return str(self._json_message)
+
 
 class KVAckRequest:
   def __init__(self, msg: JsonMessage):
@@ -131,7 +141,8 @@ class StarServer(Server):
   def __init__(self, info: ServerInfo, connection_stub: ConnectionStub,
                next_chain: dict[str, Optional[str]],
                prev_chain: dict[str, Optional[str]],
-               leader: ServerInfo) -> None:
+               leader: ServerInfo,
+               server_names: List[str]) -> None:
     """
     intializing the star server class
     Attributes
@@ -192,6 +203,8 @@ class StarServer(Server):
       The reverse of the next_chain for the server
     """
 
+    self.server_names: List[str] = server_names
+
   def _process_req(self, msg: JsonMessage) -> JsonMessage:
     """
     handles the different types of requests
@@ -224,8 +237,40 @@ class StarServer(Server):
         if wrt.version[1] >= self.versions[wrt.key][1]:# checking the version numbers before applying a write
           self.d[wrt.key]=wrt.val # updating the values we got from the leader
           self.versions[wrt.key]=wrt.version
-          
-     
+
+  def _create_replication_chain(self) -> Tuple[dict[str, Optional[str]], dict[str, Optional[str]]]:
+    """
+    Creates a replication chain for the servers.
+
+    Returns:
+        next_chain: A dictionary mapping each server to its next server in the chain.
+        prev_chain: A dictionary mapping each server to its previous server in the chain.
+    """
+    # Fixing the random seed for reproducibility
+    random.seed(42)
+
+    # Shuffle the list of server names excluding the current server
+    shuffled_servers = self.server_names[:]
+    shuffled_servers.remove(self._info.name)
+    random.shuffle(shuffled_servers)
+
+    # Place the current server (self._info.name) at the start of the chain
+    chain = [self._info.name] + shuffled_servers
+
+    # Initialize next_chain and prev_chain
+    next_chain = {}
+    prev_chain = {}
+
+    # Build the chains
+    for i in range(len(chain)):
+        current_server = chain[i]
+        next_server = chain[i + 1] if i + 1 < len(chain) else None
+        prev_server = chain[i - 1] if i - 1 >= 0 else None
+
+        next_chain[current_server] = next_server
+        prev_chain[current_server] = prev_server
+
+    return next_chain, prev_chain
 
   def _get(self, req: KVGetRequest) -> JsonMessage:
     """
@@ -282,8 +327,7 @@ class StarServer(Server):
 
     if req.next_chain is None: 
       # if the request doesnt have a next and prev chain then the request must have come from the client, thus we set that in the request being forwarded
-      req.next_chain = self.next_chain 
-      req.prev_chain = self.prev_chain
+      req.next_chain, req.prev_chain = self._create_replication_chain()
       
     next_server = req.next_chain[self._info.name]
 
@@ -294,7 +338,7 @@ class StarServer(Server):
       if self._info.name==self.leader: 
         # if there are other servers in the chain and we are the leader, we must apply the write, as we have got response from the later servers, 
         # thus all servers have seen this write
-      
+        req.leader_verif = True
         with self.version_locks[req.key]:   
           # we use lock to ensure this write is safe                   
           if req.key not in self.versions or self.versions[req.key][1] < version_num:
@@ -302,6 +346,9 @@ class StarServer(Server):
             assert version_num is not None
             self.d[req.key] = req.val
             self.versions[req.key] = (req.request_id, version_num)
+
+      if (self._info.name!=self.leader) and (req.leader_verif is not None and req.leader_verif):
+        self.command_queue.put(QueueElement(key=req.key, reqType="ACK", version=(req.request_id, version_num)))
       return temp
 
     else:
@@ -309,6 +356,7 @@ class StarServer(Server):
       if self._info.name == self.leader:
         # if we are the leader, we apply the write locally and also set leader_verif in the ack message
         leader_verif = True
+        req.leader_verif = True
         assert version_num is not None # have made this assertion to ensure that we are never writing None as the version number on leader server
         
         with self.version_locks[req.key]:
@@ -335,10 +383,12 @@ class StarServer(Server):
     version = req.version
     leader_verif = req.leader_verif
     
-    if leader_verif:  
+    # if leader_verif:  
       # if the ack is leader verified then we can apply the changes in the key-value store
       # note that leader can never get leader verified ack
-      self.command_queue.put(QueueElement(key=req.key, reqType="ACK", version=(request_id, version)))
+      # self.command_queue.put(QueueElement(key=req.key, reqType="ACK", version=(request_id, version)))
+      # if version < self.versions[req.key][1]:
+        # print("not applied yet")
 
     if not leader_verif and self._info.name == self.leader:
       # if it is not verified and we are the leader, we must set it as verified
