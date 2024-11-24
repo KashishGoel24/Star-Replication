@@ -7,7 +7,7 @@ from core.message import JsonMessage, JsonMessage
 from core.network import TcpClient, ConnectionStub
 from core.server import ServerInfo, Server
 
-START_PORT: Final[int] = 7000
+START_PORT: Final[int] = 8000
 POOL_SZ = 32
 
 class StarClient():
@@ -19,8 +19,8 @@ class StarClient():
     self.id=client_id
     self.request_no=1
 
-  def set(self, key: str, val: str) -> bool:
-    server_number = self._get_server()
+  def set(self, key: str, val: str, server_number: Optional[int] = None) -> bool:
+    server_number = server_number if server_number is not None else self.get_server()
     request_id = "client_no" + str(self.id) + "req" + str(self.request_no)
     self.request_no += 1
     # print("SET REQUEST FROM CLIENT",self.id,"FOR", key, "TO VAL:", val, "TO SERVER:", server_number,"WITH REQUEST ID", request_id)
@@ -30,8 +30,8 @@ class StarClient():
     return response["status"] == "OK"
 
   # need to implement this
-  def get(self, key: str) -> tuple[bool, Optional[str]]:
-    server_number=self._get_server()
+  def get(self, key: str, server_number: Optional[int] = None) -> tuple[bool, Optional[str]]:
+    server_number = server_number if server_number is not None else self.get_server()
     server=self.conns[server_number]
     # print("GET REQUEST FROM CLIENT",self.id,"FOR", key, "TO SERVER:", server_number)
     response: Optional[JsonMessage] = server.send(JsonMessage({"type": "GET", "key": key}))
@@ -41,7 +41,7 @@ class StarClient():
       return True, response["val"]
     return False, response["status"]
 
-  def _get_server(self) -> int:
+  def get_server(self) -> int:
     # Random strategy
     serverNumber = random.randint(0, len(self.conns) - 1)
     return serverNumber
