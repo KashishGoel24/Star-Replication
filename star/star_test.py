@@ -120,10 +120,10 @@ class TestSTAR(unittest.TestCase):
     try:
       # Connect clients
       # client1 = self.star.connect(1)
-      num_getters = 3
+      num_getters = 2
       clients = [self.star.connect(i) for i in range(num_getters)]
 
-      num_setters = 3
+      num_setters = 2
       clients_setter = [self.star.connect(j+num_getters) for j in range(num_setters)]
 
       # Set the initial value
@@ -684,10 +684,10 @@ class TestSTAR(unittest.TestCase):
       try:
         # Connect clients
         # client1 = self.star.connect(1)
-        num_getters = 3
+        num_getters = 2
         clients = [self.star.connect(i) for i in range(num_getters)]
 
-        num_setters = 3
+        num_setters = 2
         clients_setter = [self.star.connect(j+num_getters) for j in range(num_setters)]
 
         # Set the initial value

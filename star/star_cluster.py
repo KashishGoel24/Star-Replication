@@ -7,7 +7,7 @@ from core.message import JsonMessage, JsonMessage
 from core.network import TcpClient, ConnectionStub
 from core.server import ServerInfo, Server
 
-START_PORT: Final[int] = 9000
+START_PORT: Final[int] = 7000
 POOL_SZ = 64
 
 class StarClient():
