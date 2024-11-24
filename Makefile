@@ -1,9 +1,9 @@
 # SHELL := /bin/bash
 
 # Set the starting port and bandwidth
-START_PORT ?= 9900
+START_PORT ?= 8000
 BANDWIDTH ?= 30kbps
-NUM_PORTS ?= 4
+NUM_PORTS ?= 5
 
 .PHONY: limit_ports clean
 
@@ -22,7 +22,7 @@ limit_ports:
 	$(call tc_limit_bandwidth,$(shell expr $(START_PORT) + 1))
 	$(call tc_limit_bandwidth,$(shell expr $(START_PORT) + 2))
 	$(call tc_limit_bandwidth,$(shell expr $(START_PORT) + 3))
-
+	$(call tc_limit_bandwidth,$(shell expr $(START_PORT) + 4))
 # Clean up the tc rules
 clean_tc:
 	sudo tc qdisc del dev lo root || true
@@ -32,11 +32,8 @@ clean_tc:
 setup: clean_tc limit_ports
 	export PYTHONPATH=.
 
-cr: setup
-	python3 -m unittest cr.cr_test.TestCR.test_gen_history
-
 craq: setup
 	python3 -m unittest craq.craq_test.TestCRAQ.test_throughput
 
 star: setup
-	python3 -m unittest star.star_test.TestSTAR.test_basic
+	python3 -m unittest star.star_test.TestSTAR.test_throughput

@@ -193,10 +193,10 @@ class TestCRAQ(unittest.TestCase):
     try:
       # Connect clients
       # client1 = self.craq.connect(1)
-      num_getters = 3
+      num_getters = 4
       clients = [self.craq.connect() for i in range(num_getters)]
 
-      num_setters = 3
+      num_setters = 8
       clients_setter = [self.craq.connect() for j in range(num_setters)]
 
       # Set the initial value

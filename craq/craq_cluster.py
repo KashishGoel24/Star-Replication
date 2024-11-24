@@ -7,9 +7,9 @@ from core.message import JsonMessage, JsonMessage
 from core.network import TcpClient, ConnectionStub
 from core.server import ServerInfo, Server
 
-START_PORT: Final[int] = 9900
+START_PORT: Final[int] = 9500
 # START_PORT: Final[int] = 8700
-POOL_SZ = 32
+POOL_SZ = 64
 
 class CraqClient():
   # TODO: Implement this class
@@ -75,9 +75,9 @@ class CraqCluster(ClusterManager):
     super().__init__(
       master_name="d",
       topology={
-        self.a: {self.b, self.d},
-        self.b: {self.a, self.c, self.d},
-        self.c: {self.b, self.d},
+        self.a: {self.b, self.e},
+        self.b: {self.a, self.c, self.e},
+        self.c: {self.b, self.d, self.e},
         self.d: {self.c, self.e},
         self.e: {self.d}
       },
