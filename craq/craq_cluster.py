@@ -55,18 +55,21 @@ class CraqCluster(ClusterManager):
     self.b = ServerInfo("b", "localhost", START_PORT+1)
     self.c = ServerInfo("c", "localhost", START_PORT+2)
     self.d = ServerInfo("d", "localhost", START_PORT+3)
+    self.e = ServerInfo("e", "localhost", START_PORT+4)
 
     self.prev: dict[ServerInfo, Optional[ServerInfo]] = {
       self.a: None,
       self.b: self.a,
       self.c: self.b,
       self.d: self.c,
+      self.e: self.d,
     }
     self.next: dict[ServerInfo, Optional[ServerInfo]] = {
       self.a: self.b,
       self.b: self.c,
       self.c: self.d,
-      self.d: None,
+      self.d: self.e,
+      self.e: None
     }
 
     super().__init__(
@@ -75,7 +78,8 @@ class CraqCluster(ClusterManager):
         self.a: {self.b, self.d},
         self.b: {self.a, self.c, self.d},
         self.c: {self.b, self.d},
-        self.d: {self.c},
+        self.d: {self.c, self.e},
+        self.e: {self.d}
       },
       sock_pool_size=POOL_SZ,
     )
@@ -83,9 +87,9 @@ class CraqCluster(ClusterManager):
   def connect(self) -> CraqClient:
     # TODO: Implement this method
     # pass
-    return CraqClient([self.a, self.b, self.c, self.d])
+    return CraqClient([self.a, self.b, self.c, self.d, self.e])
 
   def create_server(self, si: ServerInfo, connection_stub: ConnectionStub) -> Server:
     # TODO: Implement this method
     # pass
-    return CraqServer(info=si, connection_stub=connection_stub, next=self.next[si], prev=self.prev[si], tail=self.d)
+    return CraqServer(info=si, connection_stub=connection_stub, next=self.next[si], prev=self.prev[si], tail=self.e)

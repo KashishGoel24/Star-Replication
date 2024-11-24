@@ -102,6 +102,9 @@ class CraqServer(Server):
     self.versions: dict[str,int] = {} # this will maintain the dictionary from the keys to the version numbers 
     self.versionState: dict[str,str] = {} # this will maintain the dictionary from the keys to the latest version state whether clean or dirty
 
+  def _cmd_thread(self) -> None:
+    pass
+
   def _process_req(self, msg: JsonMessage) -> JsonMessage:
     if msg.get("type") == RequestType.GET.name:
       return self._get(KVGetRequest(msg))
