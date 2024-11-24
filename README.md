@@ -1,114 +1,37 @@
-# Lab3: High Throughput Chain Replication using CRAQ
+# Star Replication
 
-In this assignment you will implement [`CRAQ: A Distibuted Object-Storage System`](https://www.usenix.org/legacy/event/usenix09/tech/full_papers/terrace/terrace.pdf)
-(Strong consistency variant - refer Section 2 of the paper)
-from scratch and improve the read throughput as compared to the basic 
-implementation of `Chain Replication` that we have provided. The read-write 
-history should be linearizable.
+A Distributed Object-Storage System for increased read and write throughputs
 
-## Specifications
-- You have to implement both server and client side of the system.
-- The system should be able to handle `SET` and `GET` requests.
-- The system stores key-value pairs. Both key and value are strings.
-- The system should be able to handle multiple clients (upto 32) concurrently.
-- You need not worry about the fault tolerance of the system.
-- The system consists of a single chain of 4 servers.
+## Table of Contents
 
-## Background
+- [Objective](#objective)
+- [Setup](#setup)
+- [Testing](#testing)
+- [Core Library](#core-library)
+- [System Design of Star Replication](#system-design-of-star-replication)
 
-You are provided with a library `core/` which will help you in setting up the
-server framework, handling connections and transfer of messages. You can use
-this library to implement the server side of the system.
-The library provides you with the following functionalities:
-- `core/message.py` : To define the message format for communication between servers.
-    The same format is used by the client to communicate with the server.
-    All the messages should be of type `JsonMessage` and can contain any number of fields.
-- `core/server.py` : Each server process will be an instance of the `Server` class.
-    It listens for incoming connections and handles the messages in a separate
-    thread. You can extend this class to implement your server.
-    You should implement the `_process_req` method to handle the incoming requests.
-- `core/network.py` : To establish connections between servers.
-    The class `TcpClient` is used to establish a connection with a server.
-    It maintains a pool of connections to the server and reuses them.
-    The `send` method sends a message to a server and returns the response message from the server. \
-    The class `ConnectionStub` maintains all the connections to the servers in the cluster.
-    It takes a set of servers it can connect to and establishes connections to all of them.
-    An instance of this class is made available to all the servers in the cluster.
-    You are supposed to use this class to send messages to other servers in the cluster.
-    It provides an interface to send messages to any server by name in the cluster without 
-    worrying about the connection details. It provides the following methods:
-    - `send` : To send a message to a server by name and get the response.
-    - `initiate_connections` : To establish connections to all the servers in the cluster. 
-        This method should be called during the cluster formation before sending any messages.
-- `core/cluster.py` : The class `ClusterManager` is used to manage the cluster of servers.
-    It starts the servers and establishes connections between them according to a specified topology.
-    You can extend this class to implement your cluster manager 
-    (See the provided chain replication implementation for reference).
-    You may overwrite the `create_server` method to create your server instance.
-    This class expects the following parameters:
-    - topology: The cluster topology information of the form `dict[ServerInfo, set[ServerInfo]]`
-    representing a set of servers each server can send messages to. This information is used to create `ConnectionStub`
-    which maintains the connections between the servers as explained above.
-    - master_name: Let's assume that the tail is the master for the sake of this assignment. This currently does not have much significance.
-    - sock_pool_size: The number of sockets to be maintained in the pool for each server. This directly affects the number of concurrent connections that can be maintained by the server.
-- `core/logger.py` : To log the messages and events in the system.
-    You can use the `server_logger` and `client_logger` objects to log the messages.
-    The client logs will be used to check the linearizability of the system.
-    You can change the log level to `DEBUG` to see the logs on the console and debug your code.
+> Check the DESIGN/ folder for understanding the code architecture and design.
 
-## System Design of Chain Replication
+## Objective
 
-### CrClient
+We wish to build a distributed object-storage system from scratch and improve the read and write throughput of [`CRAQ: A Distibuted Object-Storage System`](https://www.usenix.org/legacy/event/usenix09/tech/full_papers/terrace/terrace.pdf). We ensure that the read and write histories are linearizable.
 
-The `CrClient` object can be used to send `SET` and `GET` requests to the cluster. The client picks the appropriate server to send the request based on the request type. If the request is a `SET` request, it sends the request to the `head` server of the chain. If the request is a `GET` request, it sends the request to the `tail` server of the chain.
+## Setup
 
-The message format for the requests is of type `JsonMessage` and as follows:
-- `SET` request: `{"type": "SET", "key": <key>, "value": <value>}`
-- `GET` request: `{"type": "GET", "key": <key>}`
+1. Install [Python 3.9](https://www.python.org/downloads/).
+2. Create & Activate a python environment `python3.9 -m venv myenv && source myenv/bin/activate`.
+3. pip install -r requirements.txt
+4. Install go version >= 1.21 and the installation procedure for the same can be found [here](https://golang.org/doc/install).
 
-### CrCluster
-We will manage a cluster of servers (in this assignment, we will have 4 servers) namely a, b, c and d. 
-The interconnection among the servers will be mananged by the ClusterManager. 
+## Testing
 
-![Image](docs/cr-chain.png)
+### Running the code
+To run the various tests for `STAR Storage System`, we have added the command in the makefile under `star`. We have the following tests for the star cluster defined in the file `star_test.py`:-
+- test_multiple_keys
+To run the tests above run the command `make star` and the test name can be changed in the makefile itself in the command `python3 -m unittest star.star_test.TestSTAR.<test_name>`
 
-- Topology: For each server we will store the set of servers that, this server can 
-send messages to.
-    ```python3
-        topology={self.a: {self.b}, # a can send message to b
-            self.b: {self.c},       # b can send message to c
-            self.c: {self.d},       # c can send message to d
-            self.d: set()}          # d does not send message to any server
-    ```
-- Each server will also store its previous and next server in the chain.
-- The first server of the chain is called `head` and the last one is called `tail`.
-- The `connect` method of `CrCluster` returns a `CrClient` object which can be used to send requests to the cluster.
-
-### CrServer
-
-This extends the `Server` class from the `core` library. It stores the key-value pairs in its local dictionary. It additionally stores the previous and next server in the chain. `_process_req` is called whenever a message is received by the server. The server processes the request and sends the response back to the client. 
-
-#### Handling SET Request
-Whenever the `head` server receives a `SET` request, it updates its local
-dictionary and sends this request to its adjacent server. The `tail` upon receving
-this request sends the acknowledgement as `"status" : "OK"` message to the
-penultimate node of the chain. This way, the acknowlegment is sent back.
-
-When this acknowledgement reaches back the `head` node, we say that the `SET`
-request is completed and the head node sends the acknowledgement to the client.
-
-#### Handling GET Request
-In Chain replication, the `GET` request is always sent to the `tail` node. Hence
-when it recieves such a request, it sends the response from its local dictionary.
-
-## Checking Linearizability
-
-**PRE-REQUISITE**: You need to have `go` version >= 1.21 installed on your system (baadal VM). You can find the installation instructions [here](https://golang.org/doc/install).
-
-To test that the read-write history of the system is linearizable, we have used
-[Porcupine](https://github.com/anishathalye/porcupine). You dont need to
-understand its inner working. We have provided you the interface to interact with it.
-
+### Checking Linearizability
+To test that the read-write history of the system is linearizable, we have used [Porcupine](https://github.com/anishathalye/porcupine).
 We use the logs from the client to check if the history is linearizable or not. 
 The `lcheck` library is used for testing. 
 This assumes that the initial value of any key is `"0"` if no explicit SET call is made.
@@ -118,70 +41,103 @@ Run this command to test linearizability in lcheck directory:
 go run main.go <client-log-file-path>
 ``` 
 
-The testcases can consist of multiple worker threads (clients) sending requests concurrently.
-A request can be a `SET` or a `GET` request and the client logs the request and the response.
-The following is the expected format of the client logs:
-```
-12:15:50 INFO worker_0 Setting key = 0
-12:15:50 INFO worker_1 Getting key
-12:15:50 INFO worker_1 Get key = 0
-12:15:50 INFO worker_0 Set key = 0
-```
-The linearizability checker looks for 4 types of events in the logs:
-- `Setting <key> = <value>` : A `SET` request is made by the client.
-- `Set <key> = <value>` : The `SET` request is completed.
-- `Getting <key>` : A `GET` request is made by the client.
-- `Get <key> = <value>` : The `GET` request is completed.
+### Measuring Throughput
 
-NOTE: Here, worker and client are used interchangeably.
+The throughput of the system can be measured by the number of requests processed by the system in a given time. The throughput can be calculated as the total number of requests processed by the system in that duration.
 
-It also fetches the worker id from the log to track the order of events.
-The worker name must follow the format `worker_<id>` and be unique.
-A worker should only send requests one after the other, not concurrently.
-
-Kindly ensure, that you do not modify any of the logging formats. 
-This is important for the linearizability checker to work correctly and grade your submission.
-A sample log file is provided in the `logs/` directory for reference.
-
-## CRAQ
-Taking the implementation of Chain Replication as reference, you have to 
-implement CRAQ. Kindly use the `core/` library to setup the server framework,
-handle connections, and transfer messages.
-
-In CRAQ, the `GET` requests could be served by any server (not just the tail, as
-opposed to the case of Chain Replication - Refer Section2.3 of the paper). Hence, the read throughput should be
-comparatively high for CRAQ (refer Figure 4 of the paper).
-
-You need to complete the the CRAQ implementation in the `craq` directory.
-Do not modify the names of the files or classes provided in any of the directories.
-We will be using the same names in our testcases.
-
-## Measuring Throughput
-
-The throughput of the system can be measured by the number of requests processed by the system in a given time. You can trigger requests from multiple clients concurrently to measure the throughput of the system. Each client should send requests sequentially for a specified duration. The throughput can be calculated as the total number of requests processed by the system in that duration.
-
-In order to measure the throughput, you should limit the bandwidth of the network. You can use the `tc` command to limit the bandwidth of the network. We have provided the steps to limit the bandwidth in the Makefile. You can use the following command to limit the bandwidth to 100kbps:
+In order to measure the throughput, we can limit the bandwidth of the network. We use the `tc` command to limit the bandwidth of the network. We can use the following command to limit the bandwidth to x kbps:
 ```bash
 make limit_ports
 ```
-Please ensure that you limit the bandwidth for throughput measurement. Make sure the values `START_PORT` and `BANDWIDTH` in the Makefile are set correctly.
+Make sure the values `START_PORT` and `BANDWIDTH` in the Makefile are set correctly.
 
-NOTE: The `tc` command requires `sudo` permissions. You can run the `make limit_ports` command with `sudo` permissions. This command works only on the linux machines. You are encouraged to use the provided `baadalvm` for this assignment.
 
-## Submission
+## Core Library
 
-You need to submit a zip file of the `craq` directory. The zip file should be named as `<entry_number>_<name>.zip`.
-Your submission should contain the following files:
-- `craq/__init__.py`
-- `craq/craq_server.py`
-- `craq/craq_cluster.py`
-- `craq/<any-other-file.py>`
+The library `core/` helps in setting up the server framework, handling connections and 
+transfer of messages. We use this library to implement the server side of the system.
+The library has the following functionalities:
+- `core/message.py` : To define the message format for communication between servers.
+    The same format is used by the client to communicate with the server.
+    All the messages are of type `JsonMessage` and can contain any number of fields.
+- `core/server.py` : Each server process will be an instance of the `Server` class.
+    It listens for incoming connections and handles the messages in a separate
+    thread.
+- `core/network.py` : To establish connections between servers.
+    The class `TcpClient` is used to establish a connection with a server.
+    It maintains a pool of connections to the server and reuses them.
+    The `send` method sends a message to a server and returns the response message from the server. \
+    The class `ConnectionStub` maintains all the connections to the servers in the cluster.
+    It takes a set of servers it can connect to and establishes connections to all of them.
+    It provides an interface to send messages to any server by name in the cluster without 
+    worrying about the connection details. It provides the following methods:
+    - `send` : To send a message to a server by name and get the response.
+    - `initiate_connections` : To establish connections to all the servers in the cluster. 
+        This method should be called during the cluster formation before sending any messages.
+- `core/cluster.py` : The class `ClusterManager` is used to manage the cluster of servers.
+    It starts the servers and establishes connections between them according to a specified topology.
+    We have the following parameters in this class:
+    - topology: The cluster topology information of the form `dict[ServerInfo, set[ServerInfo]]`
+    representing a set of servers each server can send messages to. This information is used to create `ConnectionStub`
+    which maintains the connections between the servers.
+    - leader_name: We assign one server in the cluster as the leader
+    - sock_pool_size: The number of sockets to be maintained in the pool for each server. This directly affects the number of concurrent connections that can be maintained by the server.
+- `core/logger.py` : To log the messages and events in the system.
 
-## Evaluation
-The read-write history generated by your implementation should be linearizable.
-And the read-throughput of CRAQ should be higher than basic chain replication.
+## System Design of Star Replication
 
-- 0 marks: Non-linearizable history.
-- +20 Marks: Correct linearizable history of CRAQ with improved read-throughput.
-    Note that your submission should achieve a minimum throughput improvement of 2X as compared to the basic chain replication for clean reads. Otherwise, you will not be eligible for these 20 marks.
-- +20 Marks: Relative grading based on throughput under various tests.
+### StarClient
+
+The `StarClient` object can be used to send `SET` and `GET` requests to the cluster. The client sends the `SET` and `GET` requests to any random chosen server from the cluster.
+
+The message format for the requests is of type `JsonMessage` and as follows:
+- `SET` request: `{"type": "SET", "key": <key>, "value": <value>, "request_id":<request_id>}`
+- `GET` request: `{"type": "GET", "key": <key>}`
+
+### StarCluster
+We manage a server of clusters. 
+The interconnection among the servers are mananged by the ClusterManager. 
+
+![Image](docs/cr-chain.png)
+
+- Topology: For each server we store the set of servers that, this server can 
+send messages to.
+    ```python3
+        topology={
+        self.a: {self.b, self.c, self.d, self.e},
+        self.b: {self.a, self.c, self.d, self.e},
+        self.c: {self.a, self.b, self.d, self.e},
+        self.d: {self.a, self.b, self.c, self.e},
+        self.e: {self.a, self.b, self.c, self.d}}
+    ```
+- The `connect` method of `StarCluster` returns a `StarClient` object which can be used to send requests to the cluster.
+
+### StarServer
+
+This extends the `Server` class from the `core` library. It stores the key-value pairs in its local dictionary. `_process_req` is called whenever a message is received by the server. The server processes the request and sends the response back to the client.  The data structures that the server uses are as follows:-
+- Local Dictionary (`self.d`): This is a dictionary which stores the key-value pairs.
+- Key and Version Number Map (`self.versions`): This is a dictionary that maps the key to a tuple of request id and the version number.
+- Key and their Version States (`self.versionState`): This is a map from the keys to the state of the write made, i.e., clean or dirty.
+- Buffer/ Scratch Space (`self.buffer`): We store the writes that haven't been yet applied to the server state here. It is a map from (key, request_id) to (version_number, version_state, value).
+- Command Queue (`self.command_queue`): Every server has a command queue in which we add any state changes we want to make for the server except for the changes in the buffer.
+- Next Version (`self.next_version`): This stores the version numbers that should be next assigned to any write for a particular key. This is maintained by the leader of the cluster.
+- Version_Locks (`self.version_locks`): This contains the locks for each key. These locks are used by the leader.
+The command queue associated with the server is consumed by the thread,`_cmd_thread` that makes suitable changes to the server state.
+
+#### Processing Requests from Clients and Other Servers
+A server may have to process a get or a set request from the client. As mentioned earlier, when a server gets a request, a call to the `_process_req` method is made. Calls to the `_get`, `_set` and the `_ack` method are made on getting a `GET`, `SET`, and `ACK` requests respectively.
+
+#### Handling SET Request
+Whenever a server receives a `SET` request, it first applies the writes in the buffer if the server is not the leader. Before forwarding the request to the next server according to the topology, we check if we are the leader, and if yes, we add to the request the version number for the write. We then forward the request to the next server (if any, i.e, if we haven't reached the end of the chain yet) in the chain. If we are the leader, then we wait for the response to flow through the rest of the chain and once we get the same, we `apply` the write to leader's state.
+If we are the last server in the chain, then we start sending the acknowledgment in the back chain. 
+
+Note: The writes are ony applied to the state of the leader server directly when a set request is received. Other servers only store the writes in a buffer.
+
+#### Handling GET Request
+In Star replication, `GET` request is sent to a random server in the cluster. If the request is received on the leader server, we serve the request with the value from the key-value store. 
+If the server is not leader then either of the two cases can happen :- 
+- Leader has an empty buffer for that key: An empty buffer for the key means that there are no dirty writes for the key and we directly serve the request from the key-value store.
+- Leader has a write corresponding to the key in the buffer: We don't serve the request locally, rather request the leader to give us the most updated value of the key along with the version number of the write made. We process the response from the leader and if the version number of the write is more recent to the one we have in our key-value store, and if we have the request of that write in the buffer then we update the latest write in our key-value store for that key.
+
+#### Handling Ack Request
+In Star Replication, `ACK` request are recvd by servers from the fellow servers in the topology. If the acknowledgment has been verified by the leader already, then we apply the write to the state. If not, then we don't apply to the state. We then forward the ack to the previous server in the chain if any.

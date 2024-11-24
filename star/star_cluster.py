@@ -7,33 +7,25 @@ from core.message import JsonMessage, JsonMessage
 from core.network import TcpClient, ConnectionStub
 from core.server import ServerInfo, Server
 
-# START_PORT: Final[int] = 9900
-START_PORT: Final[int] = 9000
+START_PORT: Final[int] = 7000
 POOL_SZ = 32
 
 class StarClient():
-  # TODO: Implement this class
-  # pass
-
-  # this should be the same as that for crClient
-  def __init__(self, infos: list[ServerInfo], client_id: int, next_chains: list[dict[str, Optional[str]]], prev_chains:list[dict[str, Optional[str]]] ):
+  def __init__(self, infos: list[ServerInfo], client_id: int):
     self.conns: list[TcpClient] = []
     for info in infos:
       conn = TcpClient(info)
       self.conns.append(conn)
     self.id=client_id
-    self.next_chains=next_chains
-    self.prev_chains=prev_chains
     self.request_no=1
-  
-  
+
   def set(self, key: str, val: str) -> bool:
-    server_number=self._get_server()
+    server_number = self._get_server()
     request_id = "client_no" + str(self.id) + "req" + str(self.request_no)
     self.request_no += 1
-    print("SET REQUEST FROM CLIENT",self.id,"FOR", key, "TO VAL:", val, "TO SERVER:", server_number,"WITH REQUEST ID", request_id)
-    response: Optional[JsonMessage] = self.conns[server_number].send(JsonMessage({"type": "SET", "key": key, "val": val, "c_id": self.id, "next_chain": self.next_chains[server_number], "prev_chain": self.prev_chains[server_number], "request_id": request_id}))
-    print("SET REQUEST FROM CLIENT",self.id,"FOR", key, "RESPONSE:", response,"WITH REQUEST ID", request_id)
+    # print("SET REQUEST FROM CLIENT",self.id,"FOR", key, "TO VAL:", val, "TO SERVER:", server_number,"WITH REQUEST ID", request_id)
+    response: Optional[JsonMessage] = self.conns[server_number].send(JsonMessage({"type": "SET", "key": key, "val": val, "c_id": self.id, "request_id": request_id}))
+    # print("SET REQUEST FROM CLIENT",self.id,"FOR", key, "RESPONSE:", response,"WITH REQUEST ID", request_id)
     assert response is not None
     return response["status"] == "OK"
 
@@ -41,10 +33,9 @@ class StarClient():
   def get(self, key: str) -> tuple[bool, Optional[str]]:
     server_number=self._get_server()
     server=self.conns[server_number]
-    # print(f"sending the request to get key: {key} to server: {server_number}")
-    print("GET REQUEST FROM CLIENT",self.id,"FOR", key, "TO SERVER:", server_number)
+    # print("GET REQUEST FROM CLIENT",self.id,"FOR", key, "TO SERVER:", server_number)
     response: Optional[JsonMessage] = server.send(JsonMessage({"type": "GET", "key": key}))
-    print("GET REQUEST FROM CLIENT",self.id,"FOR", key, "RESPONSE:", response)
+    # print("GET REQUEST FROM CLIENT",self.id,"FOR", key, "RESPONSE:", response)
     assert response is not None
     if response["status"] == "OK":
       return True, response["val"]
@@ -55,50 +46,53 @@ class StarClient():
     serverNumber = random.randint(0, len(self.conns) - 1)
     return serverNumber
 
-
 class StarCluster(ClusterManager):
   def __init__(self) -> None:
-    # TODO: Initialize the cluster
-    # pass
     self.a = ServerInfo("a", "localhost", START_PORT)
     self.b = ServerInfo("b", "localhost", START_PORT+1)
     self.c = ServerInfo("c", "localhost", START_PORT+2)
     self.d = ServerInfo("d", "localhost", START_PORT+3)
+    self.e = ServerInfo("e", "localhost", START_PORT+4)
 
     self.prev: dict[ServerInfo, Optional[ServerInfo]] = {
       self.a: None,
       self.b: self.a,
       self.c: self.b,
       self.d: self.c,
+      self.e: self.d,
     }
     self.next: dict[ServerInfo, Optional[ServerInfo]] = {
       self.a: self.b,
       self.b: self.c,
       self.c: self.d,
-      self.d: None,
+      self.d: self.e,
+      self.e: None,
     }
 
     self.prev_chain: list[dict[ServerInfo, Optional[ServerInfo]]] = [
-      {self.a:None, self.b:self.a, self.c:self.b, self.d:self.c},
-      {self.a:self.b, self.b:None, self.c:self.d, self.d:self.a},
-      {self.a:self.d, self.b:self.a, self.c:None, self.d:self.c},
-      {self.a:self.b, self.b:self.c, self.c:self.d, self.d:None},
+      {self.a:None, self.b:self.c, self.c:self.d, self.d:self.e, self.e:self.a},  
+      {self.a:self.b, self.b:None, self.c:self.d, self.d:self.e, self.e:self.a},
+      {self.a:self.c, self.b:self.d, self.c:None, self.d:self.a, self.e:self.b},
+      {self.a:self.c, self.b:self.d, self.c:self.e, self.d:None, self.e:self.b},
+      {self.a:self.e, self.b:self.a, self.c:self.b, self.d:self.c, self.e:None},
     ]
 
     self.next_chain: list[dict[ServerInfo, Optional[ServerInfo]]] = [
-      {self.a:self.b, self.b:self.c, self.c:self.d, self.d:None},
-      {self.a:self.d, self.b:self.a, self.c:None, self.d:self.c},
-      {self.a:self.b, self.b:None, self.c:self.d, self.d:self.a},
-      {self.a:None, self.b:self.a, self.c:self.b, self.d:self.c},
+      {self.a:self.e, self.b:None, self.c:self.b, self.d:self.c, self.e:self.d},    # 1 -> 5 -> 4 -> 3 -> 2
+      {self.a:self.e, self.b:self.a, self.c:None, self.d:self.c, self.e:self.d},    # 2 -> 1 -> 5 -> 4 -> 3
+      {self.a:self.d, self.b:self.e, self.c:self.a, self.d:self.b, self.e:None},    # 3 -> 1 -> 4 -> 2 -> 5
+      {self.a:None, self.b:self.e, self.c:self.a, self.d:self.b, self.e:self.c},    # 4 -> 2 -> 5 -> 3 -> 1
+      {self.a:self.b, self.b:self.c, self.c:self.d, self.d:None, self.e:self.a},    # 5 -> 1 -> 2 -> 3 -> 4
     ]
 
     super().__init__(
       master_name="d",
       topology={
-        self.a: {self.b, self.d, self.c},
-        self.b: {self.a, self.c, self.d},
-        self.c: {self.b, self.d, self.a},
-        self.d: {self.c, self.a, self.b},
+        self.a: {self.b, self.c, self.d, self.e},
+        self.b: {self.a, self.c, self.d, self.e},
+        self.c: {self.a, self.b, self.d, self.e},
+        self.d: {self.a, self.b, self.c, self.e},
+        self.e: {self.a, self.b, self.c, self.d},
       },
       sock_pool_size=POOL_SZ,
     )
@@ -108,7 +102,11 @@ class StarCluster(ClusterManager):
       for chain in chain_list]
 
   def connect(self, client_id) -> StarClient:
-    return StarClient(infos=[self.a, self.b, self.c, self.d], client_id=client_id, next_chains=self.conv_chain(self.next_chain), prev_chains=self.conv_chain(self.prev_chain))
+    return StarClient(infos=[self.a, self.b, self.c, self.d, self.e], client_id=client_id)
 
   def create_server(self, si: ServerInfo, connection_stub: ConnectionStub) -> Server:
-    return StarServer(info=si, connection_stub=connection_stub, next=self.next[si], prev=self.prev[si], tail=self.d)
+    next_chain = self.conv_chain(self.next_chain)[list(self.next.keys()).index(si)]
+    prev_chain = self.conv_chain(self.prev_chain)[list(self.prev.keys()).index(si)]
+    return StarServer(info=si, connection_stub=connection_stub,
+                      next=self.next[si], prev=self.prev[si],
+                      next_chain=next_chain, prev_chain=prev_chain, tail=self.d)

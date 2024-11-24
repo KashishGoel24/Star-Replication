@@ -56,18 +56,25 @@ class KVSetRequest:
     return self._json_message["request_id"]
   
   @property
-  def next_chain(self) -> dict[ServerInfo, Optional[ServerInfo]]:
-    return self._json_message["next_chain"]
+  def next_chain(self) -> Optional[dict[ServerInfo, Optional[ServerInfo]]]:
+    return self._json_message.get("next_chain")
   
   @property
-  def prev_chain(self) -> dict[ServerInfo, Optional[ServerInfo]]:
-    return self._json_message["prev_chain"]
+  def prev_chain(self) -> Optional[dict[ServerInfo, Optional[ServerInfo]]]:
+    return self._json_message.get("prev_chain")
+
+  @next_chain.setter
+  def next_chain(self, next_chain: dict[ServerInfo, Optional[ServerInfo]]) -> None:
+    self._json_message["next_chain"] = next_chain
+  
+  @prev_chain.setter
+  def prev_chain(self, prev_chain: dict[ServerInfo, Optional[ServerInfo]]) -> None:
+    self._json_message["prev_chain"] = prev_chain
 
   @version.setter
   def version(self, ver: int) -> None:
     self._json_message['ver'] = ver
   
-
   @property
   def json_msg(self) -> JsonMessage:
     return self._json_message
@@ -123,6 +130,8 @@ class StarServer(Server):
 
   def __init__(self, info: ServerInfo, connection_stub: ConnectionStub,
                next: Optional[ServerInfo], prev: Optional[ServerInfo],
+               next_chain: dict[str, Optional[str]],
+               prev_chain: dict[str, Optional[str]],
                tail: ServerInfo) -> None:
     super().__init__(info, connection_stub)
     self.next: Final[Optional[str]] = None if next is None else next.name
@@ -134,8 +143,9 @@ class StarServer(Server):
     self.buffer: dict[Tuple[str, str], Tuple[int, str, int]] = {} # this is mapping (key, request id) to (version number, version state, value) 
     self.next_version: dict[str, int] = defaultdict(lambda: (0))  # this will just keep track of the number of set requests that are pending 
     self.version_locks: dict[str, Lock] = defaultdict(Lock)  # Per-key locks
+    self.next_chain: dict[str, Optional[str]] = next_chain
+    self.prev_chain: dict[str, Optional[str]] = prev_chain
 
-  # def _process_req(self, req_q: queue.Queue[Tuple[JsonMessage, socket.socket]]) -> JsonMessage:
   def _process_req(self, msg: JsonMessage) -> JsonMessage:
     if msg.get("type") == RequestType.GET.name:
       return self._get(KVGetRequest(msg))
@@ -188,7 +198,6 @@ class StarServer(Server):
   def _set(self, req: KVSetRequest) -> JsonMessage:
     _logger = server_logger.bind(server_name=self._info.name)
     _logger.debug(f"Setting {req.key} to {req.val}")
-    # print(f"Server name: {self._info.name} Set request")
     # assigning the version number here
     if req.version is None and self._info.name == self.tail:
       with self.version_locks[req.key]:
@@ -198,11 +207,15 @@ class StarServer(Server):
       version_num = req.version
     prev_version_num=self.versions[req.key][1]
 
-    # if self._info.name != self.tail and (prev_version_num is None or version_num is None or prev_version_num<version_num): 
     if self._info.name != self.tail: 
       self.buffer[(req.key, req.request_id)] = (version_num, 'D', req.val)
 
     req.version = version_num
+
+    if req.next_chain is None:
+      req.next_chain = self.next_chain 
+      req.prev_chain = self.prev_chain
+      
     next_server = req.next_chain[self._info.name]
 
     if next_server is not None:
